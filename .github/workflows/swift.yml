@@ -63,7 +63,7 @@ jobs:
             --output-path ./docs
           
           # Create redirect from root index.html to documentation/asciidoc_swift/
-          echo '<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0; url=documentation/asciidoc_swift/"></head><body><a href="documentation/asciidoc_swift/">Redirecting...</a></body></html>' > ./docs/index.html
+          echo '<!DOCTYPE html><html><head><meta http-equiv="refresh" content="0; url=documentation/asciidoc_swift/"></head><body><a href="asciidoc-swift.doccarchive/documentation/asciidoc_swift/">Redirecting...</a></body></html>' > ./docs/index.html
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

@@ -12,15 +12,6 @@ The `asciidoc-swift` executable provides a CLI to convert, lint, and process Asc
 asciidoc-swift <subcommand> [options]
 ```
 
-## Topics
- 
-### Modules
-
-- <doc:AsciiDocCore>
-- <doc:AsciiDocRender>
-- <doc:AsciiDocTools>
-- <doc:AsciiDocExtensions>
-
 ### Subcommands
 
 #### `json-adapter` subcommand
@@ -139,3 +130,15 @@ asciidoc-swift lint [--stdin] [--no-spellcheck] [--no-semantic-breaks] [--spell-
 | `--no-semantic-breaks` | Disable semantic break checks. |
 | `--spell-lang <spell-lang>` | Language passed to the aspell spellchecker (default: `en_US`). |
 | `-h`, `--help` | Show help information. |
+
+
+
+## Topics
+ 
+### Modules
+
+- [AsciiDocCore](../asciidoccore)
+- [AsciiDocRender](../asciidocrender)
+- [AsciiDocTools](../asciidoctools)
+- [AsciiDocExtensions](../asciidocextensions)
+
