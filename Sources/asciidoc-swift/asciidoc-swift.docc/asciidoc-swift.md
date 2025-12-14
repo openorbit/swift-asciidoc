@@ -13,6 +13,13 @@ asciidoc-swift <subcommand> [options]
 ```
 
 ## Topics
+ 
+### Modules
+
+- <doc:AsciiDocCore>
+- <doc:AsciiDocRender>
+- <doc:AsciiDocTools>
+- <doc:AsciiDocExtensions>
 
 ### Subcommands
 
