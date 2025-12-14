@@ -21,11 +21,11 @@ public func expectASGStructurallyEqual(_ actual: Any, _ expected: Any, maxDiffs:
 
 /// Convenience for ASGDocument specifically.
 public func expectASGEqual(_ actual: ASGDocument, _ expected: ASGDocument, maxDiffs: Int = 3, file: StaticString = #file, line: UInt = #line) {
-    expectASGStructurallyEqual(actual, expected, maxDiffs: maxDiffs, file: file, line: line)
+    _ = expectASGStructurallyEqual(actual, expected, maxDiffs: maxDiffs, file: file, line: line)
 }
 
 public func expectASGEqual(_ actual: ASGInlines, _ expected: ASGInlines, maxDiffs: Int = 3, file: StaticString = #file, line: UInt = #line) {
-    expectASGStructurallyEqual(actual, expected, maxDiffs: maxDiffs, file: file, line: line)
+    _ = expectASGStructurallyEqual(actual, expected, maxDiffs: maxDiffs, file: file, line: line)
 }
 
 private func _diff(_ lhs: Any, _ rhs: Any, path: String, out: inout [String], limit: Int) {
