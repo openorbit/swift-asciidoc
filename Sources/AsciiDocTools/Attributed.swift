@@ -157,12 +157,15 @@ public enum AttributedExport {
         if let xref {
             container[AsciiDocXrefAttribute.self] = xref
         }
+        #if !os(Linux)
         if let intent = inlinePresentationIntent(for: traits) {
             container.inlinePresentationIntent = intent
         }
+        #endif
         out += AttributedString(text, attributes: container)
     }
 
+    #if !os(Linux)
     private static func inlinePresentationIntent(for traits: InlineTraits) -> InlinePresentationIntent? {
         var intent = InlinePresentationIntent()
         if traits.contains(.strong) {
@@ -176,6 +179,7 @@ public enum AttributedExport {
         }
         return intent.isEmpty ? nil : intent
     }
+    #endif
 
 }
 
@@ -319,6 +323,7 @@ struct InlineTraits: OptionSet, Sendable, Hashable {
             return
         }
         var traits: InlineTraits = []
+        #if !os(Linux)
         if let intent = run.inlinePresentationIntent {
             if intent.contains(.stronglyEmphasized) {
                 traits.insert(.strong)
@@ -330,6 +335,7 @@ struct InlineTraits: OptionSet, Sendable, Hashable {
                 traits.insert(.mono)
             }
         }
+        #endif
         self = traits
     }
 
