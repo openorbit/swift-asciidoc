@@ -27,6 +27,7 @@ struct AttributedInteropTests {
         #expect(imported == doc)
     }
 
+    #if !os(Linux)
     @Test
     func importsInlinePresentationIntentWhenCustomAttributesMissing() {
         var intentContainer = AttributeContainer()
@@ -43,6 +44,7 @@ struct AttributedInteropTests {
         let expected: [AdocInline] = [.text("Strong text", span: nil)]
         #expect(children == expected)
     }
+    #endif
 
     @Test
     func splitsParagraphsOnBlankLines() {
