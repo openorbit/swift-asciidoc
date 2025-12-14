@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<article xmlns="http://docbook.org/ns/docbook" version="5.0">
+  <info>
+    {% if headerTitle %}
+      <title>{{ headerTitle }}</title>
+    {% endif %}
+  </info>
+
+  {% for block in blocks %}
+    {% include "docbook5/block.stencil" %}
+  {% endfor %}
+
+  <index/>
+</article>

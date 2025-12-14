@@ -1,0 +1,169 @@
+
+{% if block.kind == "paragraph" %}
+{% if block.meta.attributes["latex-environment"] %}
+\begin{{ block.meta.attributes["latex-environment"]}}[
+{% if block.titleHTML %}
+{{ block.titleHTML }}
+{% endif %}
+]
+{{ block.html }}
+\end{{ block.meta.attributes["latex-environment"]}}
+{% else %}
+{{ block.html }}
+{% endif %}
+
+{% elif block.kind == "section" %}
+{% if block.level == 1 %}
+\section{ {{ block.titleHTML }} }
+{% elif block.level == 2 %}
+\subsection{ {{ block.titleHTML }} }
+{% elif block.level == 3 %}
+\subsubsection{ {{ block.titleHTML }} }
+{% elif block.level == 4 %}
+\paragraph{ {{ block.titleHTML }} }
+{% else %}
+\subparagraph{ {{ block.titleHTML }} }
+{% endif %}
+
+{% for block in block.blocks %}
+  {% include "latex/block.stencil" %}
+{% endfor %}
+
+{% elif block.kind == "discreteHeading" %}
+\paragraph*{ {{ block.titleHTML }} }
+
+{% elif block.kind == "listing" %}
+\begin{verbatim}
+{{ block.textPlain }}
+\end{verbatim}
+
+{% elif block.kind == "literal" %}
+\begin{verbatim}
+{{ block.textPlain }}
+\end{verbatim}
+
+{% elif block.kind == "list" %}
+{% if block.listType == "unordered" %}
+\begin{itemize}
+  {% for item in block.items %}
+    \item {{ item.principalHTML }}
+    {% for block in item.blocks %}
+      {% include "latex/block.stencil" %}
+    {% endfor %}
+  {% endfor %}
+\end{itemize}
+{% elif block.listType == "callout" %}
+\begin{enumerate}
+  {% for item in block.items %}
+    {% if item.callout %}
+      \item[({{ item.callout.number }})] {{ item.principalHTML }}
+    {% else %}
+      \item {{ item.principalHTML }}
+    {% endif %}
+    {% for block in item.blocks %}
+      {% include "latex/block.stencil" %}
+    {% endfor %}
+  {% endfor %}
+\end{enumerate}
+{% else %}
+\begin{enumerate}
+  {% for item in block.items %}
+    \item {{ item.principalHTML }}
+    {% for block in item.blocks %}
+      {% include "latex/block.stencil" %}
+    {% endfor %}
+  {% endfor %}
+\end{enumerate}
+{% endif %}
+
+{% elif block.kind == "dlist" %}
+\begin{description}
+  {% for item in block.items %}
+    \item[{{ item.termHTML }}] {{ item.principalHTML }}
+    {% for block in item.blocks %}
+      {% include "latex/block.stencil" %}
+    {% endfor %}
+  {% endfor %}
+\end{description}
+
+{% elif block.kind == "sidebar" %}
+\begin{quote}
+  {% for block in block.blocks %}
+    {% include "latex/block.stencil" %}
+  {% endfor %}
+\end{quote}
+
+{% elif block.kind == "example" %}
+\begin{quote}
+  {% for block in block.blocks %}
+    {% include "latex/block.stencil" %}
+  {% endfor %}
+\end{quote}
+
+{% elif block.kind == "quote" %}
+\begin{quote}
+  {% for block in block.blocks %}
+    {% include "latex/block.stencil" %}
+  {% endfor %}
+  {% if block.attribution %}
+    --- {{ block.attribution }}
+  {% endif %}
+\end{quote}
+
+{% elif block.kind == "open" %}
+{% for block in block.blocks %}
+  {% include "latex/block.stencil" %}
+{% endfor %}
+
+{% elif block.kind == "admonition" %}
+\begin{quote}
+\textbf{ {{ block.admonitionKind }}.}
+{% if block.titleHTML %}
+  \textbf{ {{ block.titleHTML }} }
+{% endif %}
+
+{% for block in block.blocks %}
+  {% include "latex/block.stencil" %}
+{% endfor %}
+\end{quote}
+
+{% elif block.kind == "verse" %}
+\begin{verse}
+{{ block.textHTML }}
+\end{verse}
+
+{% elif block.kind == "math" %}
+{% if block.display %}
+\[
+{{ block.latex }}
+\]
+{% else %}
+\( {{ block.latex }} \)
+{% endif %}
+
+{% elif block.kind == "blockMacro" and block.name == "image" %}
+\begin{figure}[h]
+\centering
+\includegraphics{ {{ block.target }} }
+{% if block.titleHTML %}
+\caption{ {{ block.titleHTML }} }
+{% endif %}
+\end{figure}
+
+{% elif block.kind == "blockMacro" %}
+\begin{quote}
+Macro {{ block.name }}: {{ block.target }}
+\end{quote}
+
+{% elif block.kind == "table" %}
+\begin{tabular}{ {{ block.columnSpec }} }
+  {% for row in block.rows %}
+    {% for cell in row %}
+      {{ cell }}{% if not forloop.last %} & {% endif %}
+    {% endfor %} \\
+  {% endfor %}
+\end{tabular}
+
+{% else %}
+% unknown block kind: {{ block.kind }}
+{% endif %}

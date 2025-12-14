@@ -1,0 +1,28 @@
+= Showcase Rendering Workflow
+
+The `examples/showcase.adoc` document exercises the features that we most often want to eyeball—lists,
+description lists, verbatim listings with callouts, PlantUML diagrams,
+tables, and inline math.
+
+Run `scripts/render-showcase.sh` to render that document with every backend:
+
+[source,sh]
+....
+./scripts/render-showcase.sh               # uses the default paths
+./scripts/render-showcase.sh path/to.adoc /tmp/showcase
+....
+
+The script:
+
+. Builds/runs `asciidoc-swift` three times to create HTML, DocBook 5 XML, and LaTeX output.
+. If `pdflatex` is available it compiles the LaTeX file twice and stores `showcase-render.pdf` beside the other artifacts.
+. If `xsltproc` and Apache FOP are installed it also converts the DocBook XML to PDF using the DocBook XSL-FO stylesheets (honouring `DOCBOOK_XSL_FO` if you want to point at a custom stylesheet).
+. If you have DocBook xslTNG available plus a Saxon processor, the script can turn the DocBook XML into HTML5 directly (handy for MathML-heavy documents that don’t round-trip well through FO/FOP). Set the following before running the script:
+   - `DOCBOOK_XSLTNG_HTML` pointing at the HTML5 stylesheet (for example `/opt/docbook-xslTNG-2.3.5/xsltng/docbook/html/docbook.xsl`).
+   - Either `SAXON_CMD` (e.g. `saxon10he`) or `SAXON_JAR` pointing at a Saxon-HE jar. The script prefers an executable on `$PATH` but falls back to `java -jar "$SAXON_JAR"` when configured.
+. Lists the artifact directory so you can open the files in your viewer of choice.
+
+Outputs are written to `artifacts/showcase` by default (git-ignored).
+Set the `TEMPLATES` environment variable if you keep templates somewhere else.
+
+If an SVG image is included in the LaTeX output, it will be converted to PNG using inkscape.

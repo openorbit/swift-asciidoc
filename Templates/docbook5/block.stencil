@@ -1,0 +1,208 @@
+
+{% if block.kind == "paragraph" %}
+  {% if block.meta.attributes["latex-environment"] %}
+    <formalpara>
+      <title>{{ block.meta.attributes["latex-environment"]|capitalize }}</title>
+      <para>{{ block.html }}</para>
+    </formalpara>
+  {% else %}
+    <para>{{ block.html }}</para>
+  {% endif %}
+
+{% elif block.kind == "section" %}
+  <section>
+    <title>{{ block.titleHTML }}</title>
+    {% for block in block.blocks %}
+      {% include "docbook5/block.stencil" %}
+    {% endfor %}
+  </section>
+
+{% elif block.kind == "discreteHeading" %}
+  <bridgehead>{{ block.titleHTML }}</bridgehead>
+
+{% elif block.kind == "listing" %}
+  {% if block.calloutMarkup %}
+    <programlisting{% if block.language %} language="{{ block.language }}"{% endif %}>{{ block.calloutMarkup }}</programlisting>
+  {% else %}
+    <programlisting{% if block.language %} language="{{ block.language }}"{% endif %}><![CDATA[{{ block.textPlain }}]]></programlisting>
+  {% endif %}
+
+{% elif block.kind == "literal" %}
+  <literallayout>{{ block.textPlain }}</literallayout>
+
+{% elif block.kind == "math" %}
+  {{ block.mathML }}
+
+{% elif block.kind == "list" %}
+  {% if block.listType == "callout" %}
+    <calloutlist>
+      {% for item in block.items %}
+        <callout {% if item.callout %}arearefs="{{ item.callout.id }}"{% endif %}>
+          {% if item.principalHTML %}
+            <para>{{ item.principalHTML }}</para>
+          {% endif %}
+          {% if item.blocks %}
+            {% for block in item.blocks %}
+              {% include "docbook5/block.stencil" %}
+            {% endfor %}
+          {% endif %}
+        </callout>
+      {% endfor %}
+    </calloutlist>
+  {% elif block.listType == "unordered" %}
+    <itemizedlist>
+      {% for item in block.items %}
+        <listitem>
+          <para>{{ item.principalHTML }}</para>
+          {% for block in item.blocks %}
+            {% include "docbook5/block.stencil" %}
+          {% endfor %}
+        </listitem>
+      {% endfor %}
+    </itemizedlist>
+  {% else %}
+    <orderedlist>
+      {% for item in block.items %}
+        <listitem>
+          <para>{{ item.principalHTML }}</para>
+          {% for block in item.blocks %}
+            {% include "docbook5/block.stencil" %}
+          {% endfor %}
+        </listitem>
+      {% endfor %}
+    </orderedlist>
+  {% endif %}
+
+{% elif block.kind == "dlist" %}
+  <variablelist>
+    {% for item in block.items %}
+      <varlistentry>
+        <term>{{ item.termHTML }}</term>
+        <listitem>
+          {% if item.principalHTML %}
+            <para>{{ item.principalHTML }}</para>
+          {% endif %}
+          {% for block in item.blocks %}
+            {% include "docbook5/block.stencil" %}
+          {% endfor %}
+        </listitem>
+      </varlistentry>
+    {% endfor %}
+  </variablelist>
+
+{% elif block.kind == "sidebar" %}
+  <sidebar>
+    {% for block in block.blocks %}
+      {% include "docbook5/block.stencil" %}
+    {% endfor %}
+  </sidebar>
+
+{% elif block.kind == "example" %}
+  <example>
+    {% for block in block.blocks %}
+      {% include "docbook5/block.stencil" %}
+    {% endfor %}
+  </example>
+
+{% elif block.kind == "quote" %}
+  <blockquote>
+    {% for block in block.blocks %}
+      {% include "docbook5/block.stencil" %}
+    {% endfor %}
+    {% if block.attribution %}
+      <attribution>{{ block.attribution }}</attribution>
+    {% endif %}
+  </blockquote>
+
+{% elif block.kind == "open" %}
+  <simplesect>
+    {% for block in block.blocks %}
+      {% include "docbook5/block.stencil" %}
+    {% endfor %}
+  </simplesect>
+
+{% elif block.kind == "admonition" %}
+  {% if block.admonitionKind and block.admonitionKind|lowercase == "note" %}
+    <note>
+  {% elif block.admonitionKind and block.admonitionKind|lowercase == "tip" %}
+    <tip>
+  {% elif block.admonitionKind and block.admonitionKind|lowercase == "warning" %}
+    <warning>
+  {% elif block.admonitionKind and block.admonitionKind|lowercase == "caution" %}
+    <caution>
+  {% elif block.admonitionKind and block.admonitionKind|lowercase == "important" %}
+    <important>
+  {% else %}
+    <note>
+  {% endif %}
+      {% if block.titlePlain %}
+        <title>{{ block.titlePlain }}</title>
+      {% endif %}
+      {% for block in block.blocks %}
+        {% include "docbook5/block.stencil" %}
+      {% endfor %}
+  {% if block.admonitionKind and block.admonitionKind|lowercase == "note" %}
+    </note>
+  {% elif block.admonitionKind and block.admonitionKind|lowercase == "tip" %}
+    </tip>
+  {% elif block.admonitionKind and block.admonitionKind|lowercase == "warning" %}
+    </warning>
+  {% elif block.admonitionKind and block.admonitionKind|lowercase == "caution" %}
+    </caution>
+  {% elif block.admonitionKind and block.admonitionKind|lowercase == "important" %}
+    </important>
+  {% else %}
+    </note>
+  {% endif %}
+
+{% elif block.kind == "verse" %}
+  <literallayout>{{ block.textPlain }}</literallayout>
+
+{% elif block.kind == "table" %}
+  <informaltable>
+    <tgroup cols="{{ block.columnCount }}">
+      {% if block.headerRowCount > 0 %}
+        <thead>
+          {% for row in block.headerRows %}
+            <row>
+              {% for cell in row %}
+                <entry>{{ cell.text }}</entry>
+              {% endfor %}
+            </row>
+          {% endfor %}
+        </thead>
+      {% endif %}
+      <tbody>
+        {% for row in block.bodyRows %}
+          <row>
+            {% for cell in row %}
+              <entry>{{ cell.text }}</entry>
+            {% endfor %}
+          </row>
+        {% endfor %}
+      </tbody>
+    </tgroup>
+  </informaltable>
+
+{% elif block.kind == "paragraph" and block.meta.attributes["latex-environment"] %}
+  <formalpara>
+    <title>{{ block.meta.attributes["latex-environment"]|capitalize }}</title>
+    <para>{{ block.plain }}</para>
+  </formalpara>
+
+{% elif block.kind == "blockMacro" and block.name == "image" %}
+  <mediaobject>
+    <imageobject>
+      <imagedata fileref="{{ block.target }}" />
+    </imageobject>
+    {% if block.titlePlain %}
+      <caption>{{ block.titlePlain }}</caption>
+    {% endif %}
+  </mediaobject>
+
+{% elif block.kind == "blockMacro" %}
+  <para>Macro {{ block.name }}: {{ block.target }}</para>
+
+{% else %}
+  <!-- unknown block kind: {{ block.kind }} -->
+{% endif %}

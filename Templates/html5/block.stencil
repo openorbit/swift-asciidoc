@@ -1,0 +1,270 @@
+{% if block.kind == "paragraph" %}
+  {% if block.meta.attributes["latex-environment"] %}
+    <div class="block math-environment {{ block.meta.attributes["latex-environment"] }} {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}" {% if block.id %}id="{{ block.id }}"{% endif %}>
+      {% if block.titleHTML %}
+        <p class="block-title">{{ block.titleHTML }}</p>
+      {% endif %}
+      {{ block.html }}
+    </div>
+  {% else %}
+    <div class="block paragraph {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}" {% if block.id %}id="{{ block.id }}"{% endif %}>
+      {% if block.titleHTML %}
+        <p class="block-title">{{ block.titleHTML }}</p>
+      {% endif %}
+      <p>{{ block.html }}</p>
+    </div>
+  {% endif %}
+
+{% elif block.kind == "section" %}
+  <section class="section level-{{ block.level }} {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}" {% if block.id %}id="{{ block.id }}"{% endif %}>
+    <h{{ block.level }}>{{ block.titleHTML }}</h{{ block.level }}>
+    {% for block in block.blocks %}
+      {% include "html5/block.stencil" %}
+    {% endfor %}
+  </section>
+
+{% elif block.kind == "discreteHeading" %}
+  <h{{ block.level }} class="discrete-heading {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}" {% if block.id %}id="{{ block.id }}"{% endif %}>
+    {{ block.titleHTML }}
+  </h{{ block.level }}>
+
+{% elif block.kind == "listing" %}
+  <div class="block listing-block {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}" {% if block.id %}id="{{ block.id }}"{% endif %}>
+    {% if block.titleHTML %}
+      <p class="block-title">{{ block.titleHTML }}</p>
+    {% endif %}
+    <pre{% if block.isSource %} class="source-listing"{% endif %}>
+      <code{% if block.language or block.calloutMarkup %} class="{% if block.language %}language-{{ block.language|lowercase }}{% endif %}{% if block.language and block.calloutMarkup %} {% endif %}{% if block.calloutMarkup %}listing-callouts{% endif %}"{% endif %}>
+{% if block.calloutMarkup %}
+{{ block.calloutMarkup }}
+{% else %}
+{{ block.textPlain }}
+{% endif %}
+      </code>
+    </pre>
+  </div>
+
+{% elif block.kind == "literal" %}
+  <div class="block literal-block {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}" {% if block.id %}id="{{ block.id }}"{% endif %}>
+    {% if block.titleHTML %}
+      <p class="block-title">{{ block.titleHTML }}</p>
+    {% endif %}
+    <pre><code>{{ block.textPlain }}</code></pre>
+  </div>
+
+{% elif block.kind == "list" %}
+  <div class="block list-block {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}" {% if block.id %}id="{{ block.id }}"{% endif %}>
+    {% if block.titleHTML %}
+      <p class="block-title">{{ block.titleHTML }}</p>
+    {% endif %}
+    {% if block.listType == "unordered" %}
+      <ul>
+    {% elif block.listType == "callout" %}
+      <ol class="callout-list">
+    {% else %}
+      <ol>
+    {% endif %}
+        {% for item in block.items %}
+          <li class="{% if item.meta.roleClass %}{{ item.meta.roleClass }}{% endif %}" {% if item.id %}id="{{ item.id }}"{% endif %}>
+            {% if block.listType == "callout" and item.callout %}
+              <span class="callout-anchor" id="{{ item.callout.id }}"></span>
+              <span class="conum">({{ item.callout.number }})</span>
+            {% endif %}
+            <div class="list-item-body">{{ item.principalHTML }}</div>
+            {% if item.blocks %}
+              <div class="list-item-children">
+                {% for block in item.blocks %}
+                  {% include "html5/block.stencil" %}
+                {% endfor %}
+              </div>
+            {% endif %}
+          </li>
+        {% endfor %}
+    {% if block.listType == "unordered" %}
+      </ul>
+    {% else %}
+      </ol>
+    {% endif %}
+  </div>
+
+{% elif block.kind == "dlist" %}
+  <div class="block dlist-block {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}" {% if block.id %}id="{{ block.id }}"{% endif %}>
+    {% if block.titleHTML %}
+      <p class="block-title">{{ block.titleHTML }}</p>
+    {% endif %}
+    <dl>
+      {% for item in block.items %}
+        <dt class="{% if item.meta.roleClass %}{{ item.meta.roleClass }}{% endif %}" {% if item.id %}id="{{ item.id }}"{% endif %}>{{ item.termHTML }}</dt>
+        <dd>
+          {% if item.principalHTML %}
+            <p>{{ item.principalHTML }}</p>
+          {% endif %}
+          {% if item.blocks %}
+            <div class="dlist-children">
+              {% for block in item.blocks %}
+                {% include "html5/block.stencil" %}
+              {% endfor %}
+            </div>
+          {% endif %}
+        </dd>
+      {% endfor %}
+    </dl>
+  </div>
+
+{% elif block.kind == "sidebar" %}
+  <aside class="block sidebar {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}" {% if block.id %}id="{{ block.id }}"{% endif %}>
+    {% if block.titleHTML %}
+      <p class="block-title">{{ block.titleHTML }}</p>
+    {% endif %}
+    {% for block in block.blocks %}
+      {% include "html5/block.stencil" %}
+    {% endfor %}
+  </aside>
+
+{% elif block.kind == "admonition" %}
+  <div class="block admonition {{ block.admonitionKind|lowercase }} {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}"
+       data-label="{{ block.admonitionKind|uppercase }}"
+       {% if block.id %}id="{{ block.id }}"{% endif %}>
+    {% if block.titleHTML %}
+      <p class="block-title">{{ block.titleHTML }}</p>
+    {% endif %}
+    {% for block in block.blocks %}
+      {% include "html5/block.stencil" %}
+    {% endfor %}
+  </div>
+
+{% elif block.kind == "quote" %}
+  <figure class="block quote-block {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}" {% if block.id %}id="{{ block.id }}"{% endif %}>
+    {% if block.titleHTML %}
+      <p class="block-title">{{ block.titleHTML }}</p>
+    {% endif %}
+    <blockquote>
+      {% for block in block.blocks %}
+        {% include "html5/block.stencil" %}
+      {% endfor %}
+    </blockquote>
+    {% if block.attribution or block.citetitle %}
+      <figcaption>
+        {% if block.attribution %}
+          <span class="quote-attribution">— {{ block.attribution }}</span>
+        {% endif %}
+        {% if block.citetitle %}
+          <span class="quote-citetitle">{{ block.citetitle }}</span>
+        {% endif %}
+      </figcaption>
+    {% endif %}
+  </figure>
+
+{% elif block.kind == "example" %}
+  <div class="block example {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}" {% if block.id %}id="{{ block.id }}"{% endif %}>
+    {% if block.titleHTML %}
+      <p class="block-title">{{ block.titleHTML }}</p>
+    {% endif %}
+    {% for block in block.blocks %}
+      {% include "html5/block.stencil" %}
+    {% endfor %}
+  </div>
+
+{% elif block.kind == "open" %}
+  <div class="block open-block {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}" {% if block.id %}id="{{ block.id }}"{% endif %}>
+    {% if block.titleHTML %}
+      <p class="block-title">{{ block.titleHTML }}</p>
+    {% endif %}
+    {% for block in block.blocks %}
+      {% include "html5/block.stencil" %}
+    {% endfor %}
+  </div>
+
+{% elif block.kind == "verse" %}
+  <div class="block verse-block {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}" {% if block.id %}id="{{ block.id }}"{% endif %}>
+    {% if block.titleHTML %}
+      <p class="block-title">{{ block.titleHTML }}</p>
+    {% endif %}
+    <pre class="verse">{{ block.textPlain }}</pre>
+    {% if block.attribution or block.citetitle %}
+      <p class="verse-attribution">
+        {% if block.attribution %}
+          — {{ block.attribution }}
+        {% endif %}
+        {% if block.citetitle %}
+          <span class="quote-citetitle">{{ block.citetitle }}</span>
+        {% endif %}
+      </p>
+    {% endif %}
+  </div>
+
+{% elif block.kind == "math" %}
+  {% if block.display %}
+    <div class="block math-block {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}"
+         data-math-kind="{{ block.mathKind }}"
+         {% if block.id %}id="{{ block.id }}"{% endif %}>
+      {% if block.titleHTML %}
+        <p class="block-title">{{ block.titleHTML }}</p>
+      {% endif %}
+      {{ block.mathML }}
+    </div>
+  {% else %}
+    <div class="block math-inline-block {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}"
+         data-math-kind="{{ block.mathKind }}"
+         {% if block.id %}id="{{ block.id }}"{% endif %}>
+      {% if block.titleHTML %}
+        <p class="block-title">{{ block.titleHTML }}</p>
+      {% endif %}
+      <span class="math-inline">{{ block.mathML }}</span>
+    </div>
+  {% endif %}
+
+{% elif block.kind == "table" %}
+  <div class="block table-block {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}" {% if block.id %}id="{{ block.id }}"{% endif %}>
+    {% if block.titleHTML %}
+      <p class="block-title">{{ block.titleHTML }}</p>
+    {% endif %}
+    <table>
+      {% if block.headerRowCount > 0 %}
+        <thead>
+          {% for row in block.headerRows %}
+            <tr>
+              {% for cell in row %}
+                <th{% if cell.colSpan > 1 %} colspan="{{ cell.colSpan }}"{% endif %}{% if cell.rowSpan > 1 %} rowspan="{{ cell.rowSpan }}"{% endif %}{% if cell.align %} style="text-align: {{ cell.align }}"{% endif %}>{{ cell.text }}</th>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </thead>
+      {% endif %}
+      <tbody>
+        {% for row in block.bodyRows %}
+          <tr>
+            {% for cell in row %}
+              {% if cell.isHeader %}
+                <th{% if cell.colSpan > 1 %} colspan="{{ cell.colSpan }}"{% endif %}{% if cell.rowSpan > 1 %} rowspan="{{ cell.rowSpan }}"{% endif %}{% if cell.align %} style="text-align: {{ cell.align }}"{% endif %}>{{ cell.text }}</th>
+              {% else %}
+                <td{% if cell.colSpan > 1 %} colspan="{{ cell.colSpan }}"{% endif %}{% if cell.rowSpan > 1 %} rowspan="{{ cell.rowSpan }}"{% endif %}{% if cell.align %} style="text-align: {{ cell.align }}"{% endif %}>{{ cell.text }}</td>
+              {% endif %}
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+{% elif block.kind == "blockMacro" and block.name == "image" %}
+  <figure class="block image {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}" {% if block.id %}id="{{ block.id }}"{% endif %}>
+    <img src="{{ block.target }}" alt="{{ block.altText }}">
+    {% if block.titleHTML %}
+      <figcaption>{{ block.titleHTML }}</figcaption>
+    {% endif %}
+  </figure>
+
+{% elif block.kind == "blockMacro" %}
+  <div class="block block-macro {% if block.roleClass %}{{ block.roleClass }}{% endif %}"
+       data-name="{{ block.name }}"
+       {% if block.id %}id="{{ block.id }}"{% endif %}>
+    {% if block.titleHTML %}
+      <p class="block-title">{{ block.titleHTML }}</p>
+    {% endif %}
+    {{ block.target }}
+  </div>
+
+{% else %}
+  <!-- unknown block kind: {{ block.kind }} -->
+{% endif %}

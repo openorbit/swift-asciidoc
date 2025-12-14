@@ -1,0 +1,123 @@
+= AsciiDoc-Swift Showcase
+:toc:
+:sectnums:
+:doctype: article
+
+This document exercises many parser and renderer features so we can visually inspect the generated artifacts.
+
+== Lists
+
+* Unordered parent
+** Nested child
+** Another nested child
+* Back to the top level
+
+.Ordered steps
+. Collect input
+. Parse the document
+. Render with the selected backend
+
+== Description List
+
+First Term:: Explanation block with inline _emphasis_.
+Second Term:: Another entry that includes a mini list:
+* bullet one
+* bullet two
+
+== Source Listing With Callouts
+
+[source,swift]
+----
+struct Greeter {
+    let prefix: String
+
+    init(prefix: String = "Hello") { <1>
+        self.prefix = prefix          <2>
+    }
+
+    func greet(_ name: String) {      <3>
+        print("\(prefix), \(name)!")  <4>
+    }
+}
+----
+<1> Demonstrates an initializer inside the listing.
+<2> Uses a stored property assignment.
+<3> Methods can also receive callouts.
+<4> The final line references a callout anchor.
+
+== Table Specifiers
+
+.Complex Cell Specifiers
+|===
+| Specifier | Content
+
+| `2.2+^.^s`
+| 2.2+^.^s| Span 2 cols, 2 rows, center, middle, strong
+
+| `.<`
+| .<| Top align
+
+| `^`
+| ^| Center align
+
+| `>m`
+| >m| Right mono
+|===
+
+|===
+| Normal | 2+| Span 2 Cols
+| .2+| Span 2 Rows | A | B
+| C | D
+|===
+
+== Table
+
+|===
+| Backend | Description
+
+| HTML
+| Browser-friendly output used by the showcase script.
+
+| DocBook
+| Useful for downstream toolchains that understand DocBook 5 XML.
+
+| LaTeX
+| TeX-flavoured output that can be compiled to PDF.
+|===
+
+== Diagram
+
+[plantuml]
+----
+@startuml
+actor User
+participant Parser
+participant Renderer
+
+User -> Parser : submit .adoc
+Parser -> Renderer : ISM/ASG
+Renderer -> User : HTML / DocBook / LaTeX
+@enduml
+----
+
+== Inline Math
+
+Rendered inline math works too: stem:[x^2 + y^2 = z^2].footnote:[This is the Pythagorean theorem.]
+
+== Inline Macros
+
+Reflecting the new capabilities:
+
+* **Images**: image:https://raw.githubusercontent.com/asciidoctor/brand/main/logo/asciidoctor-logo-color.svg[Asciidoctor Logo, 100]
+* **Keyboard Shortcuts**: kbd:[Ctrl+Shift+R]
+* **Buttons**: Press the btn:[Submit] button.
+* **Menus**: Select menu:View[Zoom > In] to magnify.
+* **Icons**: We love icon:heart[] AsciiDoc!
+
+== Indexing
+
+We can now use index terms:
+* Visible term: ((Big Data)) is everywhere.
+* Invisible term with hierarchy: (((Operating Systems, Unix, Linux))).
+* Inline macro form: indexterm:[Database, NoSQL].
+* Visible inline macro: indexterm2:[Cloud Computing].

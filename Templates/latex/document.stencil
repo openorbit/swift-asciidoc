@@ -1,0 +1,31 @@
+
+\documentclass{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{fontawesome5} % For icon: macros
+\usepackage{listings}     % For code blocks
+\usepackage{svg}          % For .svg image support
+\usepackage{makeidx}
+\makeindex
+
+% Basic settings
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{1em}
+
+\begin{document}
+
+{% if header.title %}
+\title{ {{ header.title }} }
+\maketitle
+{% endif %}
+
+{{ content }}
+
+\printindex
+
+\end{document}

@@ -1,0 +1,41 @@
+= AsciiDoc-Swift
+
+A swift implementation of AsciiDoc
+
+== License
+
+Licensed under the Apache License, Version 2.0.
+
+== Build
+
+To build the project, run:
+
+[source,bash]
+----
+swift build
+----
+
+To run the CLI:
+
+[source,bash]
+----
+swift run asciidoc-swift --help
+----
+
+To generate documentation:
+
+[source,bash]
+----
+swift package generate-documentation
+----
+
+== Dependencies
+
+* https://github.com/apple/swift-argument-parser[swift-argument-parser]
+* https://github.com/stencilproject/Stencil.git[Stencil]
+* https://github.com/openorbit/swift-hunspell[swift-hunspell]
+* https://github.com/apple/swift-docc-plugin[swift-docc-plugin]
+
+== Acknowledgements
+
+The TCK test files in the `tests` directory are sourced from the https://gitlab.eclipse.org/eclipse/asciidoc-lang/asciidoc-tck[AsciiDoc TCK] project.

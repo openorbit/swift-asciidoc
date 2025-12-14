@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ headerTitle }}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/default.min.css">
+    <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
+    <style>
+      :root {
+        --surface: #ffffff;
+        --surface-muted: #f6f7fb;
+        --surface-elevated: #ffffff;
+        --text-primary: #111827;
+        --text-muted: #4b5563;
+        --border-soft: rgba(15, 23, 42, 0.08);
+        --accent: #2563eb;
+        --accent-soft: rgba(37, 99, 235, 0.1);
+        --shadow-soft: 0 10px 25px rgba(15, 23, 42, 0.08);
+        --monospace: "SFMono-Regular", "Roboto Mono", ui-monospace, Menlo, Monaco, "Liberation Mono", monospace;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --surface: #0f172a;
+          --surface-muted: #111827;
+          --surface-elevated: #111b2f;
+          --text-primary: #f8fafc;
+          --text-muted: #cbd5f5;
+          --border-soft: rgba(148, 163, 184, 0.25);
+          --accent: #4986ff;
+          --accent-soft: rgba(73, 134, 255, 0.15);
+          --shadow-soft: 0 18px 30px rgba(2, 6, 23, 0.65);
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 2rem 0 4rem;
+        background: var(--surface-muted);
+        color: var(--text-primary);
+        font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 16px;
+        line-height: 1.65;
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      .doc-shell {
+        width: min(960px, calc(100% - 2.5rem));
+        margin: 0 auto;
+        background: var(--surface);
+        border-radius: 18px;
+        padding: 3rem clamp(1.5rem, 4vw, 3rem);
+        box-shadow: var(--shadow-soft);
+      }
+
+      .doc-header {
+        margin-bottom: 2.5rem;
+        border-bottom: 1px solid var(--border-soft);
+        padding-bottom: 1rem;
+      }
+
+      .doc-header h1 {
+        margin: 0;
+        font-size: clamp(2rem, 4vw, 2.75rem);
+        font-weight: 700;
+      }
+
+      .doc-header .subtitle {
+        margin: 0.5rem 0 0;
+        color: var(--text-muted);
+        font-size: 1.1rem;
+      }
+
+      .doc-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1rem;
+        margin-top: 1.2rem;
+        font-size: 0.95rem;
+        color: var(--text-muted);
+      }
+
+      .doc-body > *:first-child {
+        margin-top: 0;
+      }
+
+      h1, h2, h3, h4, h5, h6 {
+        letter-spacing: -0.01em;
+        font-weight: 600;
+        margin: 2.5rem 0 1rem;
+      }
+
+      h2 { font-size: 2rem; }
+      h3 { font-size: 1.55rem; }
+      h4 { font-size: 1.3rem; }
+      h5 { font-size: 1.15rem; }
+      h6 { font-size: 1rem; text-transform: uppercase; letter-spacing: 0.08em; }
+
+      hr {
+        border: none;
+        border-top: 1px solid var(--border-soft);
+        margin: 3rem 0;
+      }
+
+      p {
+        margin: 1.25rem 0;
+        color: var(--text-primary);
+      }
+
+      .block {
+        margin: 2rem 0;
+      }
+
+      .paragraph.block {
+        margin: 1.25rem 0;
+      }
+
+      .block-title {
+        margin: 0 0 0.5rem;
+        font-size: 0.85rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        font-weight: 600;
+      }
+
+      code, pre, kbd {
+        font-family: var(--monospace);
+      }
+
+      code {
+        background: var(--surface-muted);
+        border-radius: 6px;
+        padding: 0.15rem 0.35rem;
+        font-size: 0.94em;
+      }
+
+      pre {
+        background: var(--surface-muted);
+        padding: 1rem 1.25rem;
+        border-radius: 14px;
+        border: 1px solid var(--border-soft);
+        overflow: auto;
+        font-size: 0.95rem;
+        line-height: 1.5;
+      }
+
+      pre code {
+        background: transparent;
+        padding: 0;
+        font-size: 0.95rem;
+      }
+
+      figure {
+        margin: 2rem 0;
+      }
+
+      figure > figcaption {
+        margin-top: 0.6rem;
+        color: var(--text-muted);
+        font-size: 0.92rem;
+        text-align: center;
+      }
+
+      .listing-block, .literal-block {
+        background: var(--surface-muted);
+        border-radius: 18px;
+        border: 1px solid var(--border-soft);
+        padding: 1.25rem;
+      }
+
+      .listing-block pre, .literal-block pre {
+        border: none;
+        padding: 0;
+        background: transparent;
+      }
+
+      .sidebar, .example, .open-block {
+        border: 1px solid var(--border-soft);
+        border-radius: 18px;
+        padding: 1.5rem;
+        background: linear-gradient(135deg, var(--surface), var(--surface-muted));
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+      }
+
+      blockquote {
+        border-left: 4px solid var(--accent);
+        margin: 2rem 0;
+        padding-left: 1.25rem;
+        color: var(--text-muted);
+      }
+
+      blockquote footer {
+        margin-top: 0.75rem;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+
+      .admonition {
+        border-radius: 18px;
+        padding: 1.25rem 1.5rem 1.25rem 3.5rem;
+        position: relative;
+        margin: 2rem 0;
+        border: 1px solid var(--border-soft);
+        background: var(--surface-muted);
+      }
+
+      .admonition::before {
+        content: attr(data-label);
+        position: absolute;
+        left: 1.25rem;
+        top: 1.25rem;
+        font-size: 0.8rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        color: inherit;
+        opacity: 0.8;
+      }
+
+      .admonition.note {
+        border-color: rgba(37, 99, 235, 0.35);
+        background: rgba(37, 99, 235, 0.08);
+        color: #1d4ed8;
+      }
+
+      .admonition.tip {
+        border-color: rgba(16, 185, 129, 0.35);
+        background: rgba(16, 185, 129, 0.08);
+        color: #0f9d7c;
+      }
+
+      .admonition.warning {
+        border-color: rgba(245, 158, 11, 0.5);
+        background: rgba(245, 158, 11, 0.1);
+        color: #b45309;
+      }
+
+      .admonition.caution, .admonition.danger, .admonition.important {
+        border-color: rgba(239, 68, 68, 0.45);
+        background: rgba(239, 68, 68, 0.1);
+        color: #b91c1c;
+      }
+
+      ul, ol {
+        padding-left: 1.5rem;
+        margin: 1.5rem 0;
+      }
+
+      li + li {
+        margin-top: 0.5rem;
+      }
+
+      .list-item-body {
+        color: var(--text-primary);
+      }
+
+      .list-item-children {
+        margin-top: 0.75rem;
+        padding-left: 1rem;
+        border-left: 2px solid var(--border-soft);
+      }
+
+      dl {
+        display: grid;
+        grid-template-columns: minmax(150px, 25%) 1fr;
+        gap: 0.5rem 1.5rem;
+        margin: 2rem 0;
+      }
+
+      dt {
+        font-weight: 600;
+      }
+
+      dd {
+        margin: 0;
+        color: var(--text-muted);
+      }
+
+      .dlist-children {
+        margin-top: 0.75rem;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 2rem 0;
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: inset 0 0 0 1px var(--border-soft);
+      }
+
+      .table-block {
+        overflow-x: auto;
+      }
+
+      table th, table td {
+        padding: 0.85rem 1rem;
+        border-bottom: 1px solid var(--border-soft);
+        text-align: left;
+      }
+
+      table tr:nth-child(even) {
+        background: rgba(15, 23, 42, 0.02);
+      }
+
+      table tr:last-child td {
+        border-bottom: none;
+      }
+
+      .math-block {
+        padding: 1.5rem;
+        border-radius: 18px;
+        background: var(--surface-muted);
+        border: 1px solid var(--border-soft);
+        overflow-x: auto;
+      }
+
+      .math-inline-block {
+        padding: 0.75rem;
+        border-radius: 12px;
+        background: var(--surface-muted);
+        border: 1px solid var(--border-soft);
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+
+      .math-inline {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.15rem 0.25rem;
+        border-radius: 6px;
+        background: rgba(37, 99, 235, 0.08);
+      }
+
+      .math-environment {
+        margin: 2rem 0;
+        padding: 1.5rem;
+        border-radius: 18px;
+        border: 1px solid var(--border-soft);
+        background: linear-gradient(120deg, var(--surface-elevated), var(--surface));
+      }
+
+      .callout-list {
+        list-style: none;
+        padding-left: 0;
+      }
+
+      .callout-list li {
+        background: var(--surface-muted);
+        border-radius: 12px;
+        padding: 0.65rem 0.9rem;
+        border: 1px solid var(--border-soft);
+      }
+
+      figure.image img {
+        width: 100%;
+        display: block;
+        border-radius: 16px;
+        border: 1px solid var(--border-soft);
+      }
+
+      .discrete-heading {
+        border-bottom: 1px solid var(--border-soft);
+        padding-bottom: 0.35rem;
+        margin-top: 1.5rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        font-size: 0.85rem;
+        letter-spacing: 0.15em;
+      }
+
+      .verse {
+        font-style: italic;
+        padding-left: 1rem;
+        border-left: 3px solid var(--border-soft);
+      }
+
+      .verse-attribution {
+        margin-top: 0.75rem;
+        color: var(--text-muted);
+        font-style: italic;
+      }
+
+      .quote-block blockquote {
+        margin: 0;
+      }
+
+      .quote-block figcaption {
+        margin-top: 1rem;
+        font-size: 0.9rem;
+        color: var(--text-muted);
+      }
+
+      .quote-citetitle {
+        font-style: italic;
+        margin-left: 0.35rem;
+      }
+
+      .block-macro {
+        padding: 1rem;
+        border: 1px dashed var(--border-soft);
+        border-radius: 14px;
+        background: var(--surface-muted);
+      }
+
+      /* Footnotes */
+      #footnotes {
+        margin-top: 3rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--border-soft);
+        font-size: 0.9rem;
+      }
+      .footnote {
+        margin-bottom: 0.5rem;
+        color: var(--text-muted);
+      }
+      sup.footnote {
+        font-size: 0.75em;
+        line-height: 0;
+        vertical-align: super;
+      }
+
+      @media (max-width: 640px) {
+        body { padding: 1.5rem 0 2rem; }
+        .doc-shell { padding: 2rem 1.5rem; }
+        dl { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="doc-shell">
+      {% if headerTitle or attributes["subtitle"] or attributes["author"] or attributes["revdate"] %}
+        <header class="doc-header">
+          {% if headerTitle %}
+            <h1>{{ headerTitle }}</h1>
+          {% endif %}
+          {% if attributes["subtitle"] %}
+            <p class="subtitle">{{ attributes["subtitle"] }}</p>
+          {% endif %}
+          {% if attributes["author"] or attributes["revdate"] or attributes["revnumber"] %}
+            <div class="doc-meta">
+              {% if attributes["author"] %}
+                <span>{{ attributes["author"] }}</span>
+              {% endif %}
+              {% if attributes["revnumber"] %}
+                <span>v{{ attributes["revnumber"] }}</span>
+              {% endif %}
+              {% if attributes["revdate"] %}
+                <span>{{ attributes["revdate"] }}</span>
+              {% endif %}
+            </div>
+          {% endif %}
+        </header>
+      {% endif %}
+
+      <main class="doc-body">
+        {% for block in blocks %}
+          {% include "html5/block.stencil" %}
+        {% endfor %}
+      </main>
+
+      {% if footnotes %}
+        <div id="footnotes">
+          {% for f in footnotes %}
+    <div class="footnote" id="_footnotedef_{{ f.id }}">
+    <a href="#_footnoteref_{{ f.id }}">{{ f.id }}</a>. {{ f.content }}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if indexCatalog %}
+<div id="index" class="sect1">
+    <h2 id="_index">Index</h2>
+    <div class="sectionbody">
+        <ul class="index">
+        {% for entry in indexCatalog %}
+            <li>{{ entry.primary }}
+                {% if entry.secondary %}
+                <ul>
+                    {% for sec in entry.secondary %}
+                    <li>{{ sec.name }}
+                        {% if sec.tertiary %}
+                        <ul>
+                            {% for tert in sec.tertiary %}
+                            <li>{{ tert }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+            </li>
+        {% endfor %}
+        </ul>
+    </div>
+</div>
+{% endif %}
+
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/highlight.min.js"></script>
+    <script>document.addEventListener("DOMContentLoaded",function(){window.hljs&&window.hljs.highlightAll();});</script>
+  </body>
+</html>
