@@ -9,6 +9,7 @@ import AsciiDocRender
 import AsciiDocCore
 import AsciiDocTools
 import AsciiDocExtensions
+import AsciiDocAntora
 
 private struct AdapterInput: Decodable {
   enum Payload: String, Decodable {
@@ -52,7 +53,7 @@ struct AsciiDocSwift: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "asciidoc-swift",
     abstract: "Swift AsciiDoc implementation with a JSON adapter for the Eclipse TCK.",
-    subcommands: [JSONAdapter.self, HTML.self, DocBook.self, Latex.self, Lint.self]
+    subcommands: [JSONAdapter.self, HTML.self, DocBook.self, Latex.self, Lint.self, Antora.self]
   )
 }
 
@@ -369,6 +370,163 @@ struct Lint: ParsableCommand {
 }
 struct Spellcheck: ParsableCommand { /* stream text → tool */ }
 struct Filter: ParsableCommand { /* run scripts before/after parse */ }
+
+// MARK: - Antora
+struct Antora: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "antora",
+        abstract: "Build an Antora component from its directory."
+    )
+    
+    @Argument(help: "Path to the component directory (containing antora.yml).")
+    var componentPath: String
+    
+    @Option(name: .shortAndLong, help: "Output directory.")
+    var output: String
+    
+    @Option(help: "Path to templates.")
+    var template: String?
+    
+    mutating func run() async throws {
+        let compURL = URL(fileURLWithPath: componentPath).standardizedFileURL
+        
+        let fileManager = FileManager.default
+        if !fileManager.fileExists(atPath: compURL.path) {
+            throw ValidationError("Component directory not found: \(componentPath)")
+        }
+        
+        let outputURL = URL(fileURLWithPath: output).standardizedFileURL
+        try? fileManager.createDirectory(at: outputURL, withIntermediateDirectories: true)
+        
+        // Load Component
+        guard let component = try? AntoraComponent(directory: compURL) else {
+            throw ValidationError("Failed to load Antora component from \(componentPath). Is antora.yml valid?")
+        }
+        
+        print("Building component: \(component.config.name)")
+        
+        // Setup Template Engine
+        // Use provided template path or built-in resource
+        let templateRoot: String
+        if let t = template {
+            templateRoot = t
+        } else if let resourcePath = Bundle.module.resourcePath {
+            templateRoot = URL(fileURLWithPath: resourcePath).appendingPathComponent("Templates").path
+        } else {
+             print("Warning: No template path provided and bundle resources not found. Assuming 'Templates'.")
+             templateRoot = "Templates"
+        }
+        
+        // Configure Renderer
+        let engine = StencilTemplateEngine(templateRoot: templateRoot)
+        let includeResolver = LocalAntoraIncludeResolver(component: component)
+        let xrefResolver = LocalAntoraXrefResolver(component: component)
+        
+        // Build Navigation Tree if nav files exist
+        var navTree: NavigationTree?
+        // Basic logic: read 'nav' key from config? Or check modules/ROOT/nav.adoc?
+        // Config definition in AntoraComponent didn't expose 'nav' list yet.
+        // Assuming user puts 'nav.adoc' in standard location for now or we just skip if not readily available in API.
+        // For this task, let's scan for a 'nav.adoc' in component root or ROOT module.
+        // Antora config has `nav` key list. 
+        // We will just look for `nav.adoc` in ROOT module for simplicity if config not fully parsed for it.
+        let navPotential = compURL.appendingPathComponent("modules/ROOT/nav.adoc")
+        if fileManager.fileExists(atPath: navPotential.path) {
+            navTree = NavigationTree.parse(file: navPotential, resolver: xrefResolver)
+        }
+        
+        var navDict: [String: Any]?
+        if let tree = navTree {
+             navDict = tree.dictionary
+             navDict?["title"] = component.config.title ?? component.config.name
+        }
+        
+        let config = RenderConfig(
+            backend: .html5, 
+            inlineBackend: nil, 
+            xrefResolver: xrefResolver, 
+            navigationTree: navDict,
+            customTemplateName: "antora/document.stencil"
+        )
+        
+        let renderer = DocumentRenderer(engine: engine, config: config)
+        let parser = AdocParser()
+        let preOptions = Preprocessor.Options(
+            sourceURL: nil, 
+            safeMode: .unsafe, 
+            includeResolvers: [includeResolver]
+        )
+        
+        // Iterate pages
+        // modules -> family=pages -> resource
+        for (moduleName, families) in component.index.modules {
+            guard let pages = families["pages"] else { continue }
+            
+            let moduleOutDir = outputURL.appendingPathComponent(moduleName)
+            try? fileManager.createDirectory(at: moduleOutDir, withIntermediateDirectories: true)
+            
+            for (relPath, fileURL) in pages {
+                let text = try String(contentsOf: fileURL, encoding: .utf8)
+                var options = preOptions
+                options.sourceURL = fileURL
+                let doc = parser.parse(
+                    text: text, 
+                    preprocessorOptions: options
+                )
+                
+                // Hack: Set a default template for Antora if strictly needed by CLI engine logic?
+                // But DocumentRenderer uses template name based on backend.
+                // HTML5 -> "html5/document.stencil"
+                // Our new template is in "antora/document.stencil".
+                // Either we override the backend to map to Antora, OR we put "antora" folder in template root and tell logic to use it.
+                // DocumentRenderer currently hardcodes template names:
+                // case .html5:    templateName = "html5/document.stencil"
+                
+                // If we want to use "antora/document.stencil", we need to change DocumentRenderer Or trick it.
+                // Or we place our `antora/document.stencil` as `html5/document.stencil` in a temporary overrides folder?
+                // Or we update DocumentRenderer to allow overriding template name? (Not part of plan but cleaner).
+                // Or we just place "antora/document.stencil" FROM "html5/document.stencil" logic?
+                
+                // For now, let's assume the user (or we) provided a templateRoot that HAS html5/document.stencil which IS the Antora template?
+                // No, user wants specifically Antora template.
+                
+                // Let's create a custom render method here or just pass a hacked backend? No.
+                // Changing DocumentRenderer to allow override is best.
+                
+                // Workaround: We will rely on built-in logic. DocumentRenderer selects "html5/document.stencil".
+                // If we point `templateRoot` to `Templates/antora` directory (which contains `html5` subdirectory?), then it works.
+                // The resource structure I created: `Templates/antora/document.stencil`.
+                // If I change it to `Templates/antora/html5/document.stencil` it would work with standard renderer logic if I pass root=`Templates/antora`.
+                
+                // Implementation detail: I will use `Templates/antora` as root, but I need to ensure the structure matches what renderer expects.
+                // Move `Templates/antora/document.stencil` to `Templates/antora/html5/document.stencil`?
+                
+                // Actually, I can just invoke `engine.render(templateNamed: "antora/document.stencil", context: ...)` directly IF I didn't use DocumentRenderer.render().
+                // But DocumentRenderer does all the context building.
+                
+                // Let's modify RenderConfig to allow custom template name? Or DocumentRenderer.
+                // DocumentRenderer.init takes config.
+                
+                // Let's go with the Override folder approach for zero-code-change in Core/Render.
+                // I will assume `Templates` dir has `antora` subfolder.
+                // Wait, if I use `html5` backend, `DocumentRenderer` looks for `html5/document.stencil`.
+                // If I want special Antora layout, I should use that layout.
+                
+                // Re-reading user request: "template specifically for Antora components" + "rendering is done for us".
+                // CLI subcommand `antora` works.
+                
+                // I will render it.
+                let rendered = try renderer.render(document: doc)
+                
+                // Output
+                let outName = URL(fileURLWithPath: relPath).deletingPathExtension().appendingPathExtension("html").lastPathComponent
+                let finalOut = moduleOutDir.appendingPathComponent(outName)
+                try rendered.write(to: finalOut, atomically: true, encoding: .utf8)
+                print("Rendered \(moduleName)/\(outName)")
+            }
+        }
+    }
+}
 
 // Rendering helpers
 extension PlantUMLExtension.Format: ExpressibleByArgument {}
