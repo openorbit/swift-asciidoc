@@ -6,6 +6,6 @@
 import Foundation
 import AsciiDocCore
 
-public protocol XrefResolver: Sendable {
-    func resolve(target: AdocXrefTarget) -> String?
+public protocol XrefResolver {
+    func resolve(target: AdocXrefTarget, source: URL?) -> String?
 }

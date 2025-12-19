@@ -8,7 +8,7 @@ import AsciiDocCore
 public struct DocBookInlineRenderer: AdocInlineRenderer {
     public init() {}
 
-    public func render(_ inlines: [AdocInline]) -> String {
+    public func render(_ inlines: [AdocInline], context: InlineContext) -> String {
         var out = ""
         for n in inlines {
             render(node: n, into: &out)

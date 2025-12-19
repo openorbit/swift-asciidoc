@@ -17,13 +17,13 @@ public enum AdocInlineBackend {
 }
 
 public protocol AdocInlineRenderer {
-    func render(_ inlines: [AdocInline]) -> String
+    func render(_ inlines: [AdocInline], context: InlineContext) -> String
 }
 
-public func renderInlines(_ inlines: [AdocInline], backend: AdocInlineBackend) -> String {
+public func renderInlines(_ inlines: [AdocInline], backend: AdocInlineBackend, context: InlineContext = InlineContext()) -> String {
     switch backend {
-    case .html5:    return HtmlInlineRenderer().render(inlines)
-    case .docbook5: return DocBookInlineRenderer().render(inlines)
-    case .latex:    return LatexInlineRenderer().render(inlines)
+    case .html5:    return HtmlInlineRenderer().render(inlines, context: context)
+    case .docbook5: return DocBookInlineRenderer().render(inlines, context: context)
+    case .latex:    return LatexInlineRenderer().render(inlines, context: context)
     }
 }

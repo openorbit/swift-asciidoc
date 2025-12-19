@@ -26,7 +26,6 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
         .package(url: "https://github.com/stencilproject/Stencil.git", from: "0.15.0"),
         .package(url: "https://github.com/openorbit/swift-hunspell", branch: "main"),
-        .package(url: "https://github.com/jpsim/Yams.git", from: "5.0.0"),
         .package(url: "https://github.com/apple/swift-docc-plugin", from: "1.0.0"),
     ],
     targets: [
@@ -75,8 +74,7 @@ let package = Package(
             name: "AsciiDocAntora",
             dependencies: [
                 "AsciiDocCore",
-                "AsciiDocRender",
-                .product(name: "Yams", package: "Yams")
+                "AsciiDocRender"
             ],
             path: "Sources/AsciiDocAntora"
         ),
@@ -90,15 +88,16 @@ let package = Package(
                 "AsciiDocRender",
                 "AsciiDocExtensions",
                 "AsciiDocTools",
+                "AsciiDocAntora",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
             path: "Sources/asciidoc-swift",
+            resources: [
+                .copy("Templates")
+            ],
             swiftSettings: [
                 .interoperabilityMode(.Cxx)
             ]
-            // resources: [
-            //    .copy("Templates")
-            //],
         ),
 
         // Unit tests for the core; add fixture files under Tests/AsciiDocCoreTests/Fixtures as needed

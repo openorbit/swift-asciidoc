@@ -11,16 +11,19 @@ public struct RenderConfig {
     public var inlineBackend: AdocInlineBackend
     public var xrefResolver: XrefResolver?
     public var navigationTree: [String: Any]?
+    public var customTemplateName: String?
 
     public init(
         backend: Backend,
         inlineBackend: AdocInlineBackend? = nil,
         xrefResolver: XrefResolver? = nil,
-        navigationTree: [String: Any]? = nil
+        navigationTree: [String: Any]? = nil,
+        customTemplateName: String? = nil
     ) {
         self.backend = backend
         self.xrefResolver = xrefResolver
         self.navigationTree = navigationTree
+        self.customTemplateName = customTemplateName
         self.inlineBackend = inlineBackend ?? {
             switch backend {
             case .html5:    return .html5
@@ -53,13 +56,22 @@ public final class DocumentRenderer {
 
     public func render(document: AdocDocument) throws -> String {
         calloutSerial = 0
+        
+        // Context setup
+        var sourceURL: URL? = nil
+        if let fileStack = document.header?.location?.start.file,
+           let last = fileStack.last {
+            sourceURL = URL(fileURLWithPath: last)
+        }
+        
+        let inlineContext = InlineContext(sourceURL: sourceURL)
 
         // 1. Resolve footnotes
         let resolution = FootnoteResolver().resolve(document)
         let docToRender = resolution.document
         let footnotes = resolution.definitions
 
-        let blocks = renderBlocks(docToRender.blocks)
+        let blocks = renderBlocks(docToRender.blocks, context: inlineContext)
 
         let indexResolver = IndexResolver()
         let indexCatalog = indexResolver.resolve(docToRender)
@@ -80,7 +92,7 @@ public final class DocumentRenderer {
             "attributes": docToRender.attributes,
             "headerTitle": docToRender.header?.title?.plain ?? "",
             "blocks": blocks,
-            "footnotes": footnotes.map(renderFootnoteDefinition),
+            "footnotes": footnotes.map { renderFootnoteDefinition($0, context: inlineContext) },
             "indexCatalog": indexEntries
         ]
         
@@ -89,24 +101,28 @@ public final class DocumentRenderer {
         }
         
         let templateName: String
-        switch config.backend {
-        case .html5:    templateName = "html5/document.stencil"
-        case .docbook5: templateName = "docbook5/document.stencil"
-        case .latex:    templateName = "latex/document.stencil"
+        if let custom = config.customTemplateName {
+            templateName = custom
+        } else {
+            switch config.backend {
+            case .html5:    templateName = "html5/document.stencil"
+            case .docbook5: templateName = "docbook5/document.stencil"
+            case .latex:    templateName = "latex/document.stencil"
+            }
         }
 
         return try engine.render(templateNamed: templateName, context: context)
     }
 
-    private func renderFootnoteDefinition(_ def: FootnoteDefinition) -> [String: Any] {
+    private func renderFootnoteDefinition(_ def: FootnoteDefinition, context: InlineContext) -> [String: Any] {
         return [
             "id": def.id,
-            "content": renderInlines(def.content),
+            "content": renderInlines(def.content, context: context),
             "textPlain": def.content.plainText()
         ]
     }
 
-    private func renderBlocks(_ blocks: [AdocBlock]) -> [[String: Any]] {
+    private func renderBlocks(_ blocks: [AdocBlock], context: InlineContext) -> [[String: Any]] {
         var rendered: [[String: Any]] = []
         var idx = 0
         while idx < blocks.count {
@@ -116,24 +132,24 @@ public final class DocumentRenderer {
                case .list(let candidate) = blocks[idx + 1],
                case .callout = candidate.kind,
                let bundle = makeCalloutBundle(for: candidate.items) {
-                rendered.append(renderListingBlock(listing, calloutBundle: bundle))
-                rendered.append(renderListBlock(candidate, calloutBundle: bundle))
+                rendered.append(renderListingBlock(listing, calloutBundle: bundle, context: context))
+                rendered.append(renderListBlock(candidate, calloutBundle: bundle, context: context))
                 idx += 2
                 continue
             }
-            rendered.append(renderBlock(block))
+            rendered.append(renderBlock(block, context: context))
             idx += 1
         }
         return rendered
     }
-
-    private func renderBlock(_ block: AdocBlock) -> [String: Any] {
+    
+    private func renderBlock(_ block: AdocBlock, context: InlineContext) -> [String: Any] {
         switch block {
         case .paragraph(let p):
-            let title = titlePair(p.title)
+            let title = titlePair(p.title, context: context)
             return [
                 "kind": "paragraph",
-                "html": renderInlines(p.text.inlines),
+                "html": renderInlines(p.text.inlines, context: context),
                 "plain": p.text.plain,
                 "titleHTML": title.html,
                 "titlePlain": title.plain,
@@ -145,9 +161,9 @@ public final class DocumentRenderer {
             return [
                 "kind": "section",
                 "level": s.level,
-                "titleHTML": renderInlines(s.title.inlines),
+                "titleHTML": renderInlines(s.title.inlines, context: context),
                 "titlePlain": s.title.plain,
-                "blocks": renderBlocks(s.blocks),
+                "blocks": renderBlocks(s.blocks, context: context),
                 "id": blockIdentifier(s.id, meta: s.meta),
                 "meta": metaContext(s.meta)
             ]
@@ -156,24 +172,24 @@ public final class DocumentRenderer {
             return [
                 "kind": "discreteHeading",
                 "level": h.level,
-                "titleHTML": renderInlines(h.title.inlines),
+                "titleHTML": renderInlines(h.title.inlines, context: context),
                 "titlePlain": h.title.plain,
                 "id": blockIdentifier(h.id, meta: h.meta),
                 "meta": metaContext(h.meta)
             ]
 
         case .listing(let l):
-            return renderListingBlock(l, calloutBundle: nil)
+            return renderListingBlock(l, calloutBundle: nil, context: context)
 
         case .list(let l):
-            return renderListBlock(l, calloutBundle: nil)
+            return renderListBlock(l, calloutBundle: nil, context: context)
 
         case .dlist(let d):
-            let title = titlePair(d.title)
+            let title = titlePair(d.title, context: context)
             return [
                 "kind": "dlist",
                 "marker": d.marker,
-                "items": d.items.map(renderDListItem(_:)),
+                "items": d.items.map { renderDListItem($0, context: context) },
                 "titleHTML": title.html,
                 "titlePlain": title.plain,
                 "id": blockIdentifier(d.id, meta: d.meta),
@@ -181,14 +197,14 @@ public final class DocumentRenderer {
             ]
 
         case .table(let t):
-            let title = titlePair(t.title)
+            let title = titlePair(t.title, context: context)
             let rows = t.cells
             let structuredRows = t.parsedRows
             let headerCount = min(t.headerRowCount, structuredRows.count)
             let headerRows = Array(structuredRows.prefix(headerCount))
             let bodyRows = Array(structuredRows.dropFirst(headerCount))
-            let headerRowCtx = renderTableRows(headerRows, defaultHeader: true)
-            let bodyRowCtx = renderTableRows(bodyRows, defaultHeader: false)
+            let headerRowCtx = renderTableRows(headerRows, defaultHeader: true, context: context)
+            let bodyRowCtx = renderTableRows(bodyRows, defaultHeader: false, context: context)
 
             let widestRow = rows.reduce(0) { max($0, $1.count) }
             let inferredColumnCount = max(widestRow, 1)
@@ -230,10 +246,10 @@ public final class DocumentRenderer {
             return ctx
 
         case .sidebar(let s):
-            let title = titlePair(s.title)
+            let title = titlePair(s.title, context: context)
             return [
                 "kind": "sidebar",
-                "blocks": renderBlocks(s.blocks),
+                "blocks": renderBlocks(s.blocks, context: context),
                 "titleHTML": title.html,
                 "titlePlain": title.plain,
                 "id": blockIdentifier(s.id, meta: s.meta),
@@ -241,10 +257,10 @@ public final class DocumentRenderer {
             ]
 
         case .example(let e):
-            let title = titlePair(e.title)
+            let title = titlePair(e.title, context: context)
             return [
                 "kind": "example",
-                "blocks": renderBlocks(e.blocks),
+                "blocks": renderBlocks(e.blocks, context: context),
                 "titleHTML": title.html,
                 "titlePlain": title.plain,
                 "id": blockIdentifier(e.id, meta: e.meta),
@@ -252,10 +268,10 @@ public final class DocumentRenderer {
             ]
 
         case .quote(let q):
-            let title = titlePair(q.title)
+            let title = titlePair(q.title, context: context)
             return [
                 "kind": "quote",
-                "blocks": renderBlocks(q.blocks),
+                "blocks": renderBlocks(q.blocks, context: context),
                 "titleHTML": title.html,
                 "titlePlain": title.plain,
                 "attribution": q.attribution?.plain ?? "",
@@ -265,10 +281,10 @@ public final class DocumentRenderer {
             ]
 
         case .open(let o):
-            let title = titlePair(o.title)
+            let title = titlePair(o.title, context: context)
             return [
                 "kind": "open",
-                "blocks": renderBlocks(o.blocks),
+                "blocks": renderBlocks(o.blocks, context: context),
                 "titleHTML": title.html,
                 "titlePlain": title.plain,
                 "id": blockIdentifier(o.id, meta: o.meta),
@@ -279,18 +295,18 @@ public final class DocumentRenderer {
             return [
                 "kind": "admonition",
                 "admonitionKind": a.kind ?? "",
-                "blocks": renderBlocks(a.blocks),
-                "titleHTML": a.title.map { renderInlines($0.inlines) } ?? "",
+                "blocks": renderBlocks(a.blocks, context: context),
+                "titleHTML": a.title.map { renderInlines($0.inlines, context: context) } ?? "",
                 "titlePlain": a.title?.plain ?? "",
                 "id": blockIdentifier(a.id, meta: a.meta),
                 "meta": metaContext(a.meta)
             ]
 
         case .verse(let v):
-            let title = titlePair(v.title)
+            let title = titlePair(v.title, context: context)
             return [
                 "kind": "verse",
-                "textHTML": v.text.map { renderInlines($0.inlines) } ?? "",
+                "textHTML": v.text.map { renderInlines($0.inlines, context: context) } ?? "",
                 "textPlain": v.text?.plain ?? "",
                 "titleHTML": title.html,
                 "titlePlain": title.plain,
@@ -301,7 +317,7 @@ public final class DocumentRenderer {
             ]
 
         case .literalBlock(let l):
-            let title = titlePair(l.title)
+            let title = titlePair(l.title, context: context)
             return [
                 "kind": "literal",
                 "textPlain": l.text.plain,
@@ -321,7 +337,7 @@ public final class DocumentRenderer {
                 "raw": m.body,
                  "latex": latexBody,
                 "mathKind": m.kind == .latex ? "latex" : "asciimath",
-                "titleHTML": m.title.map { renderInlines($0.inlines) } ?? "",
+                "titleHTML": m.title.map { renderInlines($0.inlines, context: context) } ?? "",
                 "titlePlain": m.title?.plain ?? "",
                 "id": blockIdentifier(m.id, meta: m.meta),
                 "meta": metaContext(m.meta)
@@ -333,7 +349,7 @@ public final class DocumentRenderer {
                 "kind": "blockMacro",
                 "name": m.name,
                 "target": m.target ?? "",
-                "titleHTML": m.title.map { renderInlines($0.inlines) } ?? "",
+                "titleHTML": m.title.map { renderInlines($0.inlines, context: context) } ?? "",
                 "titlePlain": m.title?.plain ?? "",
                 "altText": altText,
                 "attributes": m.meta.attributes,
@@ -346,8 +362,8 @@ public final class DocumentRenderer {
         }
     }
 
-    private func renderListingBlock(_ listing: AdocListing, calloutBundle: CalloutBundle?) -> [String: Any] {
-        let title = titlePair(listing.title)
+    private func renderListingBlock(_ listing: AdocListing, calloutBundle: CalloutBundle?, context: InlineContext) -> [String: Any] {
+        let title = titlePair(listing.title, context: context)
         var textPlain = listing.text.plain
         var calloutMarkup: String? = nil
 
@@ -364,9 +380,9 @@ public final class DocumentRenderer {
         let isSourceBlock = (listing.meta.attributes["style"]?.lowercased() == "source")
         let language = listingLanguage(for: listing)
 
-        var context: [String: Any] = [
+        var ctx: [String: Any] = [
             "kind": "listing",
-            "textHTML": renderInlines(listing.text.inlines),
+            "textHTML": renderInlines(listing.text.inlines, context: context),
             "textPlain": textPlain,
             "delimiter": listing.delimiter ?? "----",
             "titleHTML": title.html,
@@ -375,19 +391,19 @@ public final class DocumentRenderer {
             "meta": metaContext(listing.meta)
         ]
         if let calloutMarkup {
-            context["calloutMarkup"] = calloutMarkup
+            ctx["calloutMarkup"] = calloutMarkup
         }
         if isSourceBlock {
-            context["isSource"] = true
+            ctx["isSource"] = true
         }
         if let language {
-            context["language"] = language
+            ctx["language"] = language
         }
-        return context
+        return ctx
     }
 
-    private func renderListBlock(_ list: AdocList, calloutBundle: CalloutBundle?) -> [String: Any] {
-        let title = titlePair(list.title)
+    private func renderListBlock(_ list: AdocList, calloutBundle: CalloutBundle?, context: InlineContext) -> [String: Any] {
+        let title = titlePair(list.title, context: context)
         var items: [[String: Any]]
         var bundle = calloutBundle
 
@@ -397,13 +413,13 @@ public final class DocumentRenderer {
             }
             if let bundle {
                 items = zip(list.items, bundle.itemMarkers).map { item, marker in
-                    renderListItem(item, callout: marker)
+                    renderListItem(item, callout: marker, context: context)
                 }
             } else {
-                items = list.items.map(renderListItem(_:))
+                items = list.items.map { renderListItem($0, context: context) }
             }
         } else {
-            items = list.items.map(renderListItem(_:))
+            items = list.items.map { renderListItem($0, context: context) }
         }
 
         return [
@@ -417,57 +433,57 @@ public final class DocumentRenderer {
         ]
     }
 
-    private func renderListItem(_ item: AdocListItem) -> [String: Any] {
-        return renderListItem(item, callout: nil)
+    private func renderListItem(_ item: AdocListItem, context: InlineContext) -> [String: Any] {
+        return renderListItem(item, callout: nil, context: context)
     }
 
-    private func renderListItem(_ item: AdocListItem, callout: CalloutMarker?) -> [String: Any] {
-        let title = titlePair(item.title)
-        var context: [String: Any] = [
+    private func renderListItem(_ item: AdocListItem, callout: CalloutMarker?, context: InlineContext) -> [String: Any] {
+        let title = titlePair(item.title, context: context)
+        var ctx: [String: Any] = [
             "id": blockIdentifier(item.id, meta: item.meta),
             "marker": item.marker,
-            "principalHTML": renderInlines(item.principal.inlines),
+            "principalHTML": renderInlines(item.principal.inlines, context: context),
             "principalPlain": item.principal.plain,
             "titleHTML": title.html,
             "titlePlain": title.plain,
-            "blocks": renderBlocks(item.blocks),
+            "blocks": renderBlocks(item.blocks, context: context),
             "meta": metaContext(item.meta)
         ]
         if let callout {
-            context["callout"] = [
+            ctx["callout"] = [
                 "number": callout.ordinal,
                 "id": callout.id
             ]
         }
-        return context
+        return ctx
     }
 
-    private func renderDListItem(_ item: AdocDListItem) -> [String: Any] {
-        let title = titlePair(item.title)
+    private func renderDListItem(_ item: AdocDListItem, context: InlineContext) -> [String: Any] {
+        let title = titlePair(item.title, context: context)
         return [
-            "termHTML": renderInlines(item.term.inlines),
+            "termHTML": renderInlines(item.term.inlines, context: context),
             "termPlain": item.term.plain,
-            "principalHTML": item.principal.map { renderInlines($0.inlines) } ?? "",
+            "principalHTML": item.principal.map { renderInlines($0.inlines, context: context) } ?? "",
             "principalPlain": item.principal?.plain ?? "",
             "titleHTML": title.html,
             "titlePlain": title.plain,
-            "blocks": renderBlocks(item.blocks),
+            "blocks": renderBlocks(item.blocks, context: context),
             "id": blockIdentifier(item.id, meta: item.meta),
             "meta": metaContext(item.meta)
         ]
     }
 
-    private func renderInlines(_ inlines: [AdocInline]) -> String {
-        inlineRenderer.render(inlines)
+    private func renderInlines(_ inlines: [AdocInline], context: InlineContext) -> String {
+        inlineRenderer.render(inlines, context: context)
     }
 
     // Helpers
 
-    private func titlePair(_ text: AdocText?) -> (html: String, plain: String) {
+    private func titlePair(_ text: AdocText?, context: InlineContext) -> (html: String, plain: String) {
         guard let text else {
             return ("", "")
         }
-        return (renderInlines(text.inlines), text.plain)
+        return (renderInlines(text.inlines, context: context), text.plain)
     }
 
     private func blockIdentifier(_ id: String?, meta: AdocBlockMeta) -> String {
@@ -491,11 +507,11 @@ public final class DocumentRenderer {
         }
     }
 
-    private func renderTableRows(_ rows: [[AdocTableCell]], defaultHeader: Bool) -> [[ [String: Any] ]] {
+    private func renderTableRows(_ rows: [[AdocTableCell]], defaultHeader: Bool, context: InlineContext) -> [[ [String: Any] ]] {
         rows.map { row in
             row.map { cell in
                 let inlines = parseInlines(cell.text, baseSpan: nil)
-                let renderedContent = renderInlines(inlines)
+                let renderedContent = renderInlines(inlines, context: context)
                 
                 var ctx: [String: Any] = [
                     "text": renderedContent, // Now contains rendered HTML/XML
