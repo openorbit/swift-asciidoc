@@ -5,7 +5,11 @@
 
 import AsciiDocCore
 public struct HtmlInlineRenderer: AdocInlineRenderer {
-    public init() {}
+    public var xrefResolver: XrefResolver?
+
+    public init(xrefResolver: XrefResolver? = nil) {
+        self.xrefResolver = xrefResolver
+    }
 
     public func render(_ inlines: [AdocInline]) -> String {
         var out = ""
@@ -48,8 +52,15 @@ public struct HtmlInlineRenderer: AdocInlineRenderer {
             out += "</a>"
 
         case .xref(let target, let text, _):
-            let resolved = target.raw
-            let href = resolved.hasPrefix("#") ? resolved : "#" + resolved
+            var href = target.raw
+            if let custom = xrefResolver?.resolve(target: target) {
+                href = custom
+            } else {
+                 if !href.hasPrefix("#") && !href.contains(".") {
+                     href = "#" + href
+                 }
+            }
+            
             out += "<a href=\""
             out += htmlEscapeAttr(href)
             out += "\" class=\"xref\">"

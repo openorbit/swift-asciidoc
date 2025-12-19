@@ -17,17 +17,20 @@ public struct Preprocessor: Sendable {
         public var safeMode: SafeMode
         public var allowURIRead: Bool
         public var maxDepth: Int
+        public var includeResolvers: [IncludeResolver]
 
         public init(
             sourceURL: URL? = nil,
             safeMode: SafeMode = .unsafe,
             allowURIRead: Bool = true,
-            maxDepth: Int = 32
+            maxDepth: Int = 32,
+            includeResolvers: [IncludeResolver] = []
         ) {
             self.sourceURL = sourceURL?.standardizedFileURL
             self.safeMode = safeMode
             self.allowURIRead = allowURIRead
             self.maxDepth = maxDepth
+            self.includeResolvers = includeResolvers
         }
     }
 
@@ -73,7 +76,21 @@ private extension Preprocessor {
             self.options = options
             self.locked = lockedAttributes
             self.env = AttrEnv(initial: initialAttributes)
+            
+            if options.includeResolvers.isEmpty {
+                // Default to file system resolver if none provided
+                let fsResolver = FileSystemIncludeResolver(
+                    rootDirectory: options.sourceURL?.deletingLastPathComponent(),
+                    allowURIRead: options.allowURIRead,
+                    safeMode: options.safeMode
+                )
+                self.resolvers = [fsResolver]
+            } else {
+                self.resolvers = options.includeResolvers
+            }
         }
+        
+        let resolvers: [IncludeResolver]
 
         mutating func run(text: String) -> Result {
             let rootLines = splitLines(text)
@@ -345,60 +362,18 @@ private extension Preprocessor {
         }
 
         mutating func loadInclude(target: String, parentDirectory: URL?) -> IncludePayload? {
-            if let url = URL(string: target), let scheme = url.scheme, scheme != "file" {
-                return loadURIInclude(url: url)
-            }
-            return loadFileInclude(target: target, parentDirectory: parentDirectory)
-        }
-
-        mutating func loadURIInclude(url: URL) -> IncludePayload? {
-            guard options.allowURIRead, options.safeMode == .unsafe else {
-                diagnostics.append("URI includes disabled: \(url.absoluteString)")
-                return nil
-            }
-            guard let data = try? Data(contentsOf: url),
-                  let text = String(data: data, encoding: .utf8) else {
-                diagnostics.append("Unable to read URI include \(url.absoluteString)")
-                return nil
-            }
-            let lines = splitLines(text)
-            return IncludePayload(lines: lines, directory: nil, filePath: url.absoluteString)
-        }
-
-        mutating func loadFileInclude(target: String, parentDirectory: URL?) -> IncludePayload? {
-            if options.safeMode == .secure {
-                diagnostics.append("File includes disabled in secure mode: \(target)")
-                return nil
-            }
-
-            let baseDirectory = parentDirectory
-                ?? options.sourceURL?.deletingLastPathComponent()
-                ?? URL(fileURLWithPath: fileManager.currentDirectoryPath, isDirectory: true)
-            let resolved: URL
-            if target.hasPrefix("/") {
-                resolved = URL(fileURLWithPath: target).standardizedFileURL
-            } else {
-                resolved = URL(fileURLWithPath: target, relativeTo: baseDirectory).standardizedFileURL
-            }
-
-            if options.safeMode == .safe {
-                let allowed = resolved.path.hasPrefix(baseDirectory.standardizedFileURL.path)
-                if !allowed {
-                    diagnostics.append("Include outside base directory disallowed: \(resolved.path)")
-                    return nil
+            for resolver in resolvers {
+                if let result = resolver.resolve(target: target, from: parentDirectory) {
+                    let lines = splitLines(result.content)
+                    return IncludePayload(
+                        lines: lines,
+                        directory: result.directory,
+                        filePath: result.filePath
+                    )
                 }
             }
-
-            guard let text = try? String(contentsOf: resolved, encoding: .utf8) else {
-                diagnostics.append("Unable to read include \(resolved.path)")
-                return nil
-            }
-            let lines = splitLines(text)
-            return IncludePayload(
-                lines: lines,
-                directory: resolved.deletingLastPathComponent(),
-                filePath: resolved.path
-            )
+            diagnostics.append("Unresolved include: \(target)")
+            return nil
         }
 
         func evaluateIfDef(target: String) -> Bool {

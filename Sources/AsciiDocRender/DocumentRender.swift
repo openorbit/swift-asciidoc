@@ -9,9 +9,18 @@ import AsciiDocCore
 public struct RenderConfig {
     public var backend: Backend
     public var inlineBackend: AdocInlineBackend
+    public var xrefResolver: XrefResolver?
+    public var navigationTree: [String: Any]?
 
-    public init(backend: Backend, inlineBackend: AdocInlineBackend? = nil) {
+    public init(
+        backend: Backend,
+        inlineBackend: AdocInlineBackend? = nil,
+        xrefResolver: XrefResolver? = nil,
+        navigationTree: [String: Any]? = nil
+    ) {
         self.backend = backend
+        self.xrefResolver = xrefResolver
+        self.navigationTree = navigationTree
         self.inlineBackend = inlineBackend ?? {
             switch backend {
             case .html5:    return .html5
@@ -25,11 +34,21 @@ public struct RenderConfig {
 public final class DocumentRenderer {
     private let engine: TemplateEngine
     private let config: RenderConfig
+    private let inlineRenderer: AdocInlineRenderer
     private var calloutSerial: Int = 0
 
     public init(engine: TemplateEngine, config: RenderConfig) {
         self.engine = engine
         self.config = config
+        
+        switch config.inlineBackend {
+        case .html5:
+            self.inlineRenderer = HtmlInlineRenderer(xrefResolver: config.xrefResolver)
+        case .docbook5:
+            self.inlineRenderer = DocBookInlineRenderer()
+        case .latex:
+            self.inlineRenderer = LatexInlineRenderer()
+        }
     }
 
     public func render(document: AdocDocument) throws -> String {
@@ -57,14 +76,18 @@ public final class DocumentRenderer {
             ]
         }
 
-        let context: [String: Any] = [
+        var context: [String: Any] = [
             "attributes": docToRender.attributes,
             "headerTitle": docToRender.header?.title?.plain ?? "",
             "blocks": blocks,
             "footnotes": footnotes.map(renderFootnoteDefinition),
             "indexCatalog": indexEntries
         ]
-
+        
+        if let nav = config.navigationTree {
+            context["navigation"] = nav
+        }
+        
         let templateName: String
         switch config.backend {
         case .html5:    templateName = "html5/document.stencil"
@@ -435,7 +458,7 @@ public final class DocumentRenderer {
     }
 
     private func renderInlines(_ inlines: [AdocInline]) -> String {
-        AsciiDocRender.renderInlines(inlines, backend: config.inlineBackend)
+        inlineRenderer.render(inlines)
     }
 
     // Helpers
