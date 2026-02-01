@@ -14,6 +14,10 @@ public final class LocalAntoraXrefResolver: XrefResolver {
         self.component = component
     }
     
+    public func resolve(target: AdocXrefTarget) -> String? {
+        resolve(target: target, source: nil)
+    }
+    
     public func resolve(target: AdocXrefTarget, source: URL?) -> String? {
         guard let antora = target.antora else { return nil }
         
@@ -42,23 +46,30 @@ public final class LocalAntoraXrefResolver: XrefResolver {
         }
         
         // 3. Construct Relative Path
-        // Assumption: Output structure is outputDir/moduleName/pageName.html (flattened pages)
+        // Output structure: outputDir/<module>/page.html, except ROOT lives at outputDir/page.html.
         
         var href = ""
         let targetFilename = targetResource.replacingOccurrences(of: ".adoc", with: ".html")
 
+        let isTargetRoot = targetModule == "ROOT"
         if let srcMod = sourceModule {
+            let isSourceRoot = srcMod == "ROOT"
             if srcMod == targetModule {
                 // Same module: sibling file
                 href = targetFilename
+            } else if isSourceRoot {
+                // From ROOT (site root) to another module
+                href = "\(targetModule)/\(targetFilename)"
+            } else if isTargetRoot {
+                // From module to ROOT (site root)
+                href = "../\(targetFilename)"
             } else {
-                // Different module: parent -> targetModule -> file
+                // Between non-root modules
                 href = "../\(targetModule)/\(targetFilename)"
             }
         } else {
-            // Source unknown (or not in a module?), default to absolute-like or ROOT reference?
-            // Fallback to "absolute" path from root of site output
-            href = "/\(targetModule)/\(targetFilename)"
+            // Source unknown (or not in a module?), default to absolute-like from site root
+            href = isTargetRoot ? "/\(targetFilename)" : "/\(targetModule)/\(targetFilename)"
         }
         
         if let fragment = antora.fragment {

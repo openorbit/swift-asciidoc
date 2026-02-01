@@ -94,10 +94,10 @@ import AsciiDocAntora
         
         // Parse raw target - ROOT module, implicit pages family
         let target = AdocXrefTarget(raw: "ROOT:other.adoc")
-        let href = resolver.resolve(target: target)
+        let href = resolver.resolve(target: target, source: nil)
         
-        // Expect: /ROOT/other.html
-        #expect(href == "/ROOT/other.html")
+        // Expect: /other.html
+        #expect(href == "/other.html")
     }
     
     @Test func testNavigationTree() throws {
@@ -125,13 +125,13 @@ import AsciiDocAntora
         guard tree.roots.count >= 2 else { return }
         
         #expect(tree.roots[0].label == "Home")
-        #expect(tree.roots[0].href == "/ROOT/index.html")
+        #expect(tree.roots[0].href == "/index.html")
         #expect(tree.roots[0].children.count == 1)
         
         guard tree.roots[0].children.count >= 1 else { return }
         
         #expect(tree.roots[0].children[0].label == "About")
-        #expect(tree.roots[0].children[0].href == "/ROOT/about.html")
+        #expect(tree.roots[0].children[0].href == "/about.html")
         
         #expect(tree.roots[1].label == "Link To External")
     }

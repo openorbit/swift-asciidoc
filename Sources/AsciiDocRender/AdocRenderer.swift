@@ -20,6 +20,12 @@ public protocol AdocInlineRenderer {
     func render(_ inlines: [AdocInline], context: InlineContext) -> String
 }
 
+public extension AdocInlineRenderer {
+    func render(_ inlines: [AdocInline]) -> String {
+        render(inlines, context: InlineContext())
+    }
+}
+
 public func renderInlines(_ inlines: [AdocInline], backend: AdocInlineBackend, context: InlineContext = InlineContext()) -> String {
     switch backend {
     case .html5:    return HtmlInlineRenderer().render(inlines, context: context)

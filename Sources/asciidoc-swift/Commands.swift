@@ -462,8 +462,13 @@ struct Antora: AsyncParsableCommand {
         for (moduleName, families) in component.index.modules {
             guard let pages = families["pages"] else { continue }
             
-            let moduleOutDir = outputURL.appendingPathComponent(moduleName)
-            try? fileManager.createDirectory(at: moduleOutDir, withIntermediateDirectories: true)
+            let moduleOutDir: URL
+            if moduleName == "ROOT" {
+                moduleOutDir = outputURL
+            } else {
+                moduleOutDir = outputURL.appendingPathComponent(moduleName)
+                try? fileManager.createDirectory(at: moduleOutDir, withIntermediateDirectories: true)
+            }
             
             for (relPath, fileURL) in pages {
                 let text = try String(contentsOf: fileURL, encoding: .utf8)
