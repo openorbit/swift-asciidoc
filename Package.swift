@@ -113,13 +113,18 @@ let package = Package(
             name: "TCK",
             dependencies: ["AsciiDocCore"],
             path: "Tests/TCK",
-            resources: [.copy("tests")]
+            resources: [.copy("tests")],
+            swiftSettings: [
+                .interoperabilityMode(.Cxx)
+            ]
         ),
         .testTarget(
             name: "AsciiDocAntoraTests",
             dependencies: ["AsciiDocAntora", "AsciiDocCore"],
-            path: "Tests/AsciiDocAntoraTests"
+            path: "Tests/AsciiDocAntoraTests",
+            swiftSettings: [
+                .interoperabilityMode(.Cxx)
+            ]
         )
-
     ]
 )
