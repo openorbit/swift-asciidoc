@@ -1,0 +1,5 @@
+name: showcase
+version: 1.0.0
+title: Antora Showcase
+nav:
+- modules/ROOT/nav.adoc
