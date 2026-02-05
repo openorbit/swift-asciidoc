@@ -1,5 +1,5 @@
 {
-  "originHash" : "ac3839af26a894090403af88e116fddc096350578a3c3aefa355ac3ed68c66e0",
+  "originHash" : "c6ea4512e1e16b3ab843cc12fd09fe4f7046ae7901467803dc11fdd59feafad2",
   "pins" : [
     {
       "identity" : "pathkit",
@@ -62,6 +62,15 @@
       "state" : {
         "branch" : "main",
         "revision" : "5ce4da5bf83c3def24731ce206ed9da53445960e"
+      }
+    },
+    {
+      "identity" : "swift-yaml",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/openorbit/swift-yaml",
+      "state" : {
+        "branch" : "main",
+        "revision" : "540ab6b1e5b249ec81229b6476ea956a5fdba47b"
       }
     }
   ],

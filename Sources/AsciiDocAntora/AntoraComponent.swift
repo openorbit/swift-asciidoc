@@ -4,7 +4,7 @@
 //
 
 import Foundation
-
+import YAMLKit
 
 public struct AntoraComponent: Sendable {
     public struct Config: Decodable, Sendable {
@@ -12,6 +12,44 @@ public struct AntoraComponent: Sendable {
         public var version: String?
         public var title: String?
         // Navigation not yet parsed here from config, usually just 'nav' key list
+
+        public init(name: String, version: String? = nil, title: String? = nil) {
+            self.name = name
+            self.version = version
+            self.title = title
+        }
+
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            self.name = (try? container.decode(String.self, forKey: .name)) ?? "unknown"
+            self.version = Self.decodeStringIfPresent(from: container, forKey: .version)
+            self.title = try? container.decode(String.self, forKey: .title)
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case name
+            case version
+            case title
+        }
+
+        private static func decodeStringIfPresent(
+            from container: KeyedDecodingContainer<CodingKeys>,
+            forKey key: CodingKeys
+        ) -> String? {
+            if let string = try? container.decode(String.self, forKey: key) {
+                return string
+            }
+            if let intValue = try? container.decode(Int.self, forKey: key) {
+                return String(intValue)
+            }
+            if let doubleValue = try? container.decode(Double.self, forKey: key) {
+                return String(doubleValue)
+            }
+            if let boolValue = try? container.decode(Bool.self, forKey: key) {
+                return String(boolValue)
+            }
+            return nil
+        }
     }
     
     public var config: Config
@@ -32,10 +70,11 @@ public struct AntoraComponent: Sendable {
     public init(directory: URL) throws {
         self.directory = directory
         
-        // Parse antora.yml (Simple parser)
+        // Parse antora.yml
         let configFile = directory.appendingPathComponent("antora.yml")
         let configContent = try String(contentsOf: configFile, encoding: .utf8)
-        self.config = AntoraComponent.parseConfig(configContent)
+        let decoder = YAMLDecoder()
+        self.config = try decoder.decode(Config.self, from: configContent)
         
         self.index = AntoraComponent.scan(directory: directory)
     }
@@ -93,28 +132,5 @@ public struct AntoraComponent: Sendable {
         }
         
         return results.isEmpty ? nil : results
-    }
-    private static func parseConfig(_ content: String) -> Config {
-        var name = "unknown"
-        var version: String?
-        var title: String?
-        
-        let lines = content.components(separatedBy: .newlines)
-        for line in lines {
-            let parts = line.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
-            guard parts.count == 2 else { continue }
-            
-            let key = parts[0]
-            let value = parts[1]
-            let cleanValue = value.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-            
-            switch key {
-            case "name": name = cleanValue
-            case "version": version = cleanValue
-            case "title": title = cleanValue
-            default: break
-            }
-        }
-        return Config(name: name, version: version, title: title)
     }
 }

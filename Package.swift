@@ -26,6 +26,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
         .package(url: "https://github.com/stencilproject/Stencil.git", from: "0.15.0"),
         .package(url: "https://github.com/openorbit/swift-hunspell", branch: "main"),
+        .package(url: "https://github.com/openorbit/swift-yaml", branch: "main"),
         .package(url: "https://github.com/apple/swift-docc-plugin", from: "1.0.0"),
     ],
     targets: [
@@ -74,7 +75,8 @@ let package = Package(
             name: "AsciiDocAntora",
             dependencies: [
                 "AsciiDocCore",
-                "AsciiDocRender"
+                "AsciiDocRender",
+                .product(name: "YAMLKit", package: "swift-yaml"),
             ],
             path: "Sources/AsciiDocAntora"
         ),
