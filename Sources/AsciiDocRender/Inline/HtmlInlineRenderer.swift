@@ -5,65 +5,76 @@
 
 import AsciiDocCore
 public struct HtmlInlineRenderer: AdocInlineRenderer {
-    public init() {}
+    public var xrefResolver: XrefResolver?
 
-    public func render(_ inlines: [AdocInline]) -> String {
+    public init(xrefResolver: XrefResolver? = nil) {
+        self.xrefResolver = xrefResolver
+    }
+
+    public func render(_ inlines: [AdocInline], context: InlineContext) -> String {
         var out = ""
         for n in inlines {
-            render(node: n, into: &out)
+            render(node: n, context: context, into: &out)
         }
         return out
     }
 
-    private func render(node: AdocInline, into out: inout String) {
+    private func render(node: AdocInline, context: InlineContext, into out: inout String) {
         switch node {
         case .text(let s, _):
             out += htmlEscape(s)
 
         case .strong(let xs, _):
             out += "<strong>"
-            xs.forEach { render(node: $0, into: &out) }
+            xs.forEach { render(node: $0, context: context, into: &out) }
             out += "</strong>"
 
         case .emphasis(let xs, _):
             out += "<em>"
-            xs.forEach { render(node: $0, into: &out) }
+            xs.forEach { render(node: $0, context: context, into: &out) }
             out += "</em>"
 
         case .mono(let xs, _):
             out += "<code>"
-            xs.forEach { render(node: $0, into: &out) }
+            xs.forEach { render(node: $0, context: context, into: &out) }
             out += "</code>"
 
         case .mark(let xs, _):
             out += "<mark>"
-            xs.forEach { render(node: $0, into: &out) }
+            xs.forEach { render(node: $0, context: context, into: &out) }
             out += "</mark>"
 
         case .link(let target, let text, _):
             out += "<a href=\""
             out += htmlEscapeAttr(target)
             out += "\">"
-            text.forEach { render(node: $0, into: &out) }
+            text.forEach { render(node: $0, context: context, into: &out) }
             out += "</a>"
 
         case .xref(let target, let text, _):
-            let resolved = target.raw
-            let href = resolved.hasPrefix("#") ? resolved : "#" + resolved
+            var href = target.raw
+            if let custom = xrefResolver?.resolve(target: target, source: context.sourceURL) {
+                href = custom
+            } else {
+                 if !href.hasPrefix("#") && !href.contains(".") {
+                     href = "#" + href
+                 }
+            }
+            
             out += "<a href=\""
             out += htmlEscapeAttr(href)
             out += "\" class=\"xref\">"
-            text.forEach { render(node: $0, into: &out) }
+            text.forEach { render(node: $0, context: context, into: &out) }
             out += "</a>"
 
         case .superscript(let xs, _):
             out += "<sup>"
-            xs.forEach { render(node: $0, into: &out) }
+            xs.forEach { render(node: $0, context: context, into: &out) }
             out += "</sup>"
 
         case .subscript(let xs, _):
             out += "<sub>"
-            xs.forEach { render(node: $0, into: &out) }
+            xs.forEach { render(node: $0, context: context, into: &out) }
             out += "</sub>"
 
         case .math(let kind, let body, let display, _):
@@ -137,7 +148,7 @@ public struct HtmlInlineRenderer: AdocInlineRenderer {
                     out.append("<sup class=\"footnote\">[<a id=\"_footnoteref_\(i)\" class=\"footnote\" href=\"#_footnotedef_\(i)\" title=\"View footnote.\">\(i)</a>]</sup>")
                 } else {
                     // Fallback if no ID (should rely on resolver)
-                    content.forEach { render(node: $0, into: &out) }
+                    content.forEach { render(node: $0, context: context, into: &out) }
                 }
 
             case .indexTerm(let terms, let visible, _):

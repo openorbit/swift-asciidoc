@@ -18,6 +18,7 @@ let package = Package(
       .library(name: "AsciiDocRender", targets: ["AsciiDocRender"]),
       .library(name: "AsciiDocExtensions", targets: ["AsciiDocExtensions"]),
       .library(name: "AsciiDocTools", targets: ["AsciiDocTools"]),
+      .library(name: "AsciiDocAntora", targets: ["AsciiDocAntora"]),
 
       .executable(name: "asciidoc-swift", targets: ["asciidoc-swift"])
     ],
@@ -25,6 +26,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
         .package(url: "https://github.com/stencilproject/Stencil.git", from: "0.15.0"),
         .package(url: "https://github.com/openorbit/swift-hunspell", branch: "main"),
+        .package(url: "https://github.com/openorbit/swift-yaml", branch: "main"),
         .package(url: "https://github.com/apple/swift-docc-plugin", from: "1.0.0"),
     ],
     targets: [
@@ -69,6 +71,16 @@ let package = Package(
         ),
 
 
+        .target(
+            name: "AsciiDocAntora",
+            dependencies: [
+                "AsciiDocCore",
+                "AsciiDocRender",
+                .product(name: "YAMLKit", package: "swift-yaml"),
+            ],
+            path: "Sources/AsciiDocAntora"
+        ),
+
 
         // CLI executable that the TCK will invoke
         .executableTarget(
@@ -78,15 +90,16 @@ let package = Package(
                 "AsciiDocRender",
                 "AsciiDocExtensions",
                 "AsciiDocTools",
+                "AsciiDocAntora",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
             path: "Sources/asciidoc-swift",
+            resources: [
+                .copy("Templates")
+            ],
             swiftSettings: [
                 .interoperabilityMode(.Cxx)
             ]
-            // resources: [
-            //    .copy("Templates")
-            //],
         ),
 
         // Unit tests for the core; add fixture files under Tests/AsciiDocCoreTests/Fixtures as needed
@@ -102,8 +115,18 @@ let package = Package(
             name: "TCK",
             dependencies: ["AsciiDocCore"],
             path: "Tests/TCK",
-            resources: [.copy("tests")]
+            resources: [.copy("tests")],
+            swiftSettings: [
+                .interoperabilityMode(.Cxx)
+            ]
+        ),
+        .testTarget(
+            name: "AsciiDocAntoraTests",
+            dependencies: ["AsciiDocAntora", "AsciiDocCore"],
+            path: "Tests/AsciiDocAntoraTests",
+            swiftSettings: [
+                .interoperabilityMode(.Cxx)
+            ]
         )
-
     ]
 )

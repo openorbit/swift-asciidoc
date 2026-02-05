@@ -1,0 +1,7 @@
+= Welcome to the Showcase
+
+include::ROOT:partials$header.adoc[]
+
+This is a demonstration of the Antora support in AsciiDoc-Swift.
+
+See xref:features.adoc[Features].
