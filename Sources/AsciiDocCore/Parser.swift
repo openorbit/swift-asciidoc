@@ -232,7 +232,8 @@ public struct AdocParser: Sendable {
         attributes initialAttributes: [String: String?] = [:],
         lockedAttributeNames: Set<String> = [],
         includeHeaderDerivedAttributes: Bool = true,
-        preprocessorOptions: Preprocessor.Options = .init()
+        preprocessorOptions: Preprocessor.Options = .init(),
+        xadOptions: XADOptions = .init()
     ) -> AdocDocument {
         let preprocessor = Preprocessor(options: preprocessorOptions)
         let preprocessed = preprocessor.process(
@@ -266,7 +267,7 @@ public struct AdocParser: Sendable {
             return AdocRange(start: first.range.start, end: last.range.end)
         }()
 
-        return AdocDocument(attributes: docAttrs, header: header, blocks: bodyBlocks, span: docSpan)
+        return AdocDocument(attributes: docAttrs, header: header, blocks: bodyBlocks, span: docSpan, xadOptions: xadOptions)
     }
 
 

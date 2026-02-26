@@ -12,18 +12,21 @@ public struct RenderConfig {
     public var xrefResolver: XrefResolver?
     public var navigationTree: [String: Any]?
     public var customTemplateName: String?
+    public var xadOptions: XADOptions
 
     public init(
         backend: Backend,
         inlineBackend: AdocInlineBackend? = nil,
         xrefResolver: XrefResolver? = nil,
         navigationTree: [String: Any]? = nil,
-        customTemplateName: String? = nil
+        customTemplateName: String? = nil,
+        xadOptions: XADOptions = .init()
     ) {
         self.backend = backend
         self.xrefResolver = xrefResolver
         self.navigationTree = navigationTree
         self.customTemplateName = customTemplateName
+        self.xadOptions = xadOptions
         self.inlineBackend = inlineBackend ?? {
             switch backend {
             case .html5:    return .html5
@@ -93,7 +96,13 @@ public final class DocumentRenderer {
             "headerTitle": docToRender.header?.title?.plain ?? "",
             "blocks": blocks,
             "footnotes": footnotes.map { renderFootnoteDefinition($0, context: inlineContext) },
-            "indexCatalog": indexEntries
+            "indexCatalog": indexEntries,
+            "xad": [
+                "enabled": config.xadOptions.enabled,
+                "strict": config.xadOptions.strict,
+                "pagedJS": config.xadOptions.pagedJS,
+                "templatePath": config.xadOptions.templatePath ?? ""
+            ]
         ]
         
         if let nav = config.navigationTree {

@@ -53,7 +53,7 @@ struct AsciiDocSwift: AsyncParsableCommand {
   static let configuration = CommandConfiguration(
     commandName: "asciidoc-swift",
     abstract: "Swift AsciiDoc implementation with a JSON adapter for the Eclipse TCK.",
-    subcommands: [JSONAdapter.self, HTML.self, DocBook.self, Latex.self, Lint.self, Antora.self]
+    subcommands: [JSONAdapter.self, HTML.self, XadHtml.self, XadPagedHtml.self, DocBook.self, Latex.self, Lint.self, Antora.self]
   )
 }
 
@@ -179,6 +179,18 @@ struct HTML: AsyncParsableCommand {
     @Option(help: "Path to the Stencil templates root directory.")
     var template: String = "Templates"
 
+    @Flag(name: .long, help: "Enable XAD mode.")
+    var xad: Bool = false
+
+    @Flag(name: .long, help: "Enable strict XAD parsing.")
+    var xadStrict: Bool = false
+
+    @Flag(name: .long, help: "Enable Paged.js hooks (HTML only).")
+    var xadPagedJS: Bool = false
+
+    @Option(name: .long, help: "Path to XAD template (.adoc).")
+    var xadTemplate: String?
+
     @Option(
         name: [.customShort("a"), .customLong("attribute")],
         parsing: .unconditionalSingleValue,
@@ -200,6 +212,12 @@ struct HTML: AsyncParsableCommand {
     var extensions: [String] = []
 
     mutating func run() async throws {
+        let xadOptions = makeXadOptions(
+            enabled: xad,
+            pagedJS: xadPagedJS,
+            strict: xadStrict,
+            templatePath: xadTemplate
+        )
         try renderDocument(
             backend: .html5,
             defaultExtension: "html",
@@ -208,7 +226,126 @@ struct HTML: AsyncParsableCommand {
             templateRoot: template,
             attributeAssignments: attributeAssignments,
             outputPath: output,
-            enabledExtensions: extensions
+            enabledExtensions: extensions,
+            xadOptions: xadOptions
+        )
+    }
+}
+
+struct XadHtml: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "xad-html",
+        abstract: "Render AsciiDoc to HTML with XAD enabled."
+    )
+
+    @Flag(help: "Read source from stdin. Otherwise provide a path argument.")
+    var stdin: Bool = false
+
+    @Option(help: "Path to the Stencil templates root directory.")
+    var template: String = "Templates"
+
+    @Flag(name: .long, help: "Enable strict XAD parsing.")
+    var xadStrict: Bool = false
+
+    @Option(name: .long, help: "Path to XAD template (.adoc).")
+    var xadTemplate: String?
+
+    @Option(
+        name: [.customShort("a"), .customLong("attribute")],
+        parsing: .unconditionalSingleValue,
+        help: "Set document attribute (name[=value]). Repeatable."
+    )
+    var attributeAssignments: [String] = []
+
+    @Option(name: .shortAndLong, help: "Write rendered output to this path.")
+    var output: String?
+
+    @Argument(help: "Path to the .adoc document (omit when using --stdin).")
+    var inputPath: String?
+
+    @Option(
+        name: [.customShort("e"), .customLong("extension")],
+        parsing: .upToNextOption,
+        help: "Enable an extension by name (repeatable)."
+    )
+    var extensions: [String] = []
+
+    mutating func run() async throws {
+        let xadOptions = makeXadOptions(
+            enabled: true,
+            pagedJS: false,
+            strict: xadStrict,
+            templatePath: xadTemplate
+        )
+        try renderDocument(
+            backend: .html5,
+            defaultExtension: "html",
+            stdin: stdin,
+            inputPath: inputPath,
+            templateRoot: template,
+            attributeAssignments: attributeAssignments,
+            outputPath: output,
+            enabledExtensions: extensions,
+            xadOptions: xadOptions
+        )
+    }
+}
+
+struct XadPagedHtml: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        commandName: "xad-paged-html",
+        abstract: "Render AsciiDoc to HTML with XAD + Paged.js enabled."
+    )
+
+    @Flag(help: "Read source from stdin. Otherwise provide a path argument.")
+    var stdin: Bool = false
+
+    @Option(help: "Path to the Stencil templates root directory.")
+    var template: String = "Templates"
+
+    @Flag(name: .long, help: "Enable strict XAD parsing.")
+    var xadStrict: Bool = false
+
+    @Option(name: .long, help: "Path to XAD template (.adoc).")
+    var xadTemplate: String?
+
+    @Option(
+        name: [.customShort("a"), .customLong("attribute")],
+        parsing: .unconditionalSingleValue,
+        help: "Set document attribute (name[=value]). Repeatable."
+    )
+    var attributeAssignments: [String] = []
+
+    @Option(name: .shortAndLong, help: "Write rendered output to this path.")
+    var output: String?
+
+    @Argument(help: "Path to the .adoc document (omit when using --stdin).")
+    var inputPath: String?
+
+    @Option(
+        name: [.customShort("e"), .customLong("extension")],
+        parsing: .upToNextOption,
+        help: "Enable an extension by name (repeatable)."
+    )
+    var extensions: [String] = []
+
+    mutating func run() async throws {
+        let xadOptions = makeXadOptions(
+            enabled: true,
+            pagedJS: true,
+            strict: xadStrict,
+            templatePath: xadTemplate
+        )
+        try renderDocument(
+            backend: .html5,
+            defaultExtension: "html",
+            stdin: stdin,
+            inputPath: inputPath,
+            templateRoot: template,
+            attributeAssignments: attributeAssignments,
+            outputPath: output,
+            enabledExtensions: extensions,
+            xadOptions: xadOptions
         )
     }
 }
@@ -225,6 +362,18 @@ struct DocBook: AsyncParsableCommand {
     @Option(help: "Path to the Stencil templates root directory.")
     var template: String = "Templates"
 
+    @Flag(name: .long, help: "Enable XAD mode.")
+    var xad: Bool = false
+
+    @Flag(name: .long, help: "Enable strict XAD parsing.")
+    var xadStrict: Bool = false
+
+    @Flag(name: .long, help: "Enable Paged.js hooks (HTML only).")
+    var xadPagedJS: Bool = false
+
+    @Option(name: .long, help: "Path to XAD template (.adoc).")
+    var xadTemplate: String?
+
     @Option(
         name: [.customShort("a"), .customLong("attribute")],
         parsing: .unconditionalSingleValue,
@@ -246,6 +395,12 @@ struct DocBook: AsyncParsableCommand {
     var extensions: [String] = []
 
     mutating func run() async throws {
+        let xadOptions = makeXadOptions(
+            enabled: xad,
+            pagedJS: xadPagedJS,
+            strict: xadStrict,
+            templatePath: xadTemplate
+        )
         try renderDocument(
             backend: .docbook5,
             defaultExtension: "xml",
@@ -254,7 +409,8 @@ struct DocBook: AsyncParsableCommand {
             templateRoot: template,
             attributeAssignments: attributeAssignments,
             outputPath: output,
-            enabledExtensions: extensions
+            enabledExtensions: extensions,
+            xadOptions: xadOptions
         )
     }
 }
@@ -271,6 +427,18 @@ struct Latex: AsyncParsableCommand {
     @Option(help: "Path to the Stencil templates root directory.")
     var template: String = "Templates"
 
+    @Flag(name: .long, help: "Enable XAD mode.")
+    var xad: Bool = false
+
+    @Flag(name: .long, help: "Enable strict XAD parsing.")
+    var xadStrict: Bool = false
+
+    @Flag(name: .long, help: "Enable Paged.js hooks (HTML only).")
+    var xadPagedJS: Bool = false
+
+    @Option(name: .long, help: "Path to XAD template (.adoc).")
+    var xadTemplate: String?
+
     @Option(
         name: [.customShort("a"), .customLong("attribute")],
         parsing: .unconditionalSingleValue,
@@ -292,6 +460,12 @@ struct Latex: AsyncParsableCommand {
     var extensions: [String] = []
 
     mutating func run() async throws {
+        let xadOptions = makeXadOptions(
+            enabled: xad,
+            pagedJS: xadPagedJS,
+            strict: xadStrict,
+            templatePath: xadTemplate
+        )
         try renderDocument(
             backend: .latex,
             defaultExtension: "tex",
@@ -300,7 +474,8 @@ struct Latex: AsyncParsableCommand {
             templateRoot: template,
             attributeAssignments: attributeAssignments,
             outputPath: output,
-            enabledExtensions: extensions
+            enabledExtensions: extensions,
+            xadOptions: xadOptions
         )
     }
 }
@@ -536,6 +711,21 @@ struct Antora: AsyncParsableCommand {
 // Rendering helpers
 extension PlantUMLExtension.Format: ExpressibleByArgument {}
 
+private func makeXadOptions(
+    enabled: Bool,
+    pagedJS: Bool,
+    strict: Bool,
+    templatePath: String?
+) -> XADOptions {
+    let shouldEnable = enabled || pagedJS || templatePath != nil
+    return XADOptions(
+        enabled: shouldEnable,
+        strict: strict,
+        pagedJS: pagedJS,
+        templatePath: templatePath
+    )
+}
+
 private func renderDocument(
     backend: Backend,
     defaultExtension: String,
@@ -544,7 +734,8 @@ private func renderDocument(
     templateRoot: String,
     attributeAssignments: [String],
     outputPath: String?,
-    enabledExtensions: [String]
+    enabledExtensions: [String],
+    xadOptions: XADOptions
 ) throws {
     let (source, sourcePath) = try readRenderSource(stdin: stdin, inputPath: inputPath)
     let documentDirectory = sourcePath.map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
@@ -581,7 +772,8 @@ private func renderDocument(
         text: preprocessedSource,
         attributes: parserAttributes,
         lockedAttributeNames: seed.locked,
-        preprocessorOptions: preprocessorOptions
+        preprocessorOptions: preprocessorOptions,
+        xadOptions: xadOptions
     )
 
     doc = extensionHost.runDidParse(document: doc)
@@ -589,7 +781,7 @@ private func renderDocument(
     let engine = StencilTemplateEngine(templateRoot: templateRoot)
     let renderer = DocumentRenderer(
         engine: engine,
-        config: RenderConfig(backend: backend)
+        config: RenderConfig(backend: backend, xadOptions: xadOptions)
     )
     let rendered = try renderer.render(document: doc)
     try writeRenderedOutput(rendered, explicitPath: outputPath, sourcePath: sourcePath, defaultExtension: defaultExtension)

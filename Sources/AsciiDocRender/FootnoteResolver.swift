@@ -36,7 +36,8 @@ public final class FootnoteResolver {
             attributes: document.attributes,
             header: document.header,
             blocks: newBlocks,
-            span: document.span
+            span: document.span,
+            xadOptions: document.xadOptions
         )
         
         return FootnoteResolution(document: newDoc, definitions: collected)

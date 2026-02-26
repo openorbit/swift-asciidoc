@@ -402,17 +402,20 @@ public struct AdocDocument: Sendable, Equatable {
     public var header: AdocHeader? = nil
     public var blocks: [AdocBlock] = []
     public var span: AdocRange?
+    public var xadOptions: XADOptions = .init()
 
     public init(
         attributes: [String: String?] = [:],
         header: AdocHeader? = nil,
         blocks: [AdocBlock] = [],
-        span: AdocRange? = nil
+        span: AdocRange? = nil,
+        xadOptions: XADOptions = .init()
     ) {
         self.attributes = attributes
         self.header = header
         self.blocks = blocks
         self.span = span
+        self.xadOptions = xadOptions
     }
 }
 
