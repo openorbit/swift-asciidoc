@@ -1,0 +1,8 @@
+= Features
+
+* Antora Component Scanning
+* Include Resolution (module:family$resource)
+* Xref Resolution
+* Navigation Sidebar
+
+xref:index.adoc[Back to Home]

@@ -1,0 +1,17 @@
+<li>
+    {% if item.href %}
+        <a href="{{ item.href }}" class="nav-link">{{ item.label }}</a>
+    {% else %}
+        <span class="nav-link">{{ item.label }}</span>
+    {% endif %}
+    
+    {% if item.children %}
+    <ul>
+        {% for child in item.children %}
+            {% with item=child %}
+                {% include "antora/nav_item.stencil" %}
+            {% endwith %}
+        {% endfor %}
+    </ul>
+    {% endif %}
+</li>
