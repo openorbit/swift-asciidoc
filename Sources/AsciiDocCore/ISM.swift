@@ -399,10 +399,27 @@ public struct AdocHeader: Sendable, Equatable {
 
 public struct AdocDocument: Sendable, Equatable {
     public var attributes: [String: String?] = [:]
+    public var typedAttributes: [String: XADAttributeValue] = [:]
     public var header: AdocHeader? = nil
     public var blocks: [AdocBlock] = []
     public var span: AdocRange?
     public var xadOptions: XADOptions = .init()
+
+    public init(
+        attributes: [String: String?] = [:],
+        typedAttributes: [String: XADAttributeValue] = [:],
+        header: AdocHeader? = nil,
+        blocks: [AdocBlock] = [],
+        span: AdocRange? = nil,
+        xadOptions: XADOptions = .init()
+    ) {
+        self.attributes = attributes
+        self.typedAttributes = typedAttributes
+        self.header = header
+        self.blocks = blocks
+        self.span = span
+        self.xadOptions = xadOptions
+    }
 
     public init(
         attributes: [String: String?] = [:],
@@ -411,11 +428,14 @@ public struct AdocDocument: Sendable, Equatable {
         span: AdocRange? = nil,
         xadOptions: XADOptions = .init()
     ) {
-        self.attributes = attributes
-        self.header = header
-        self.blocks = blocks
-        self.span = span
-        self.xadOptions = xadOptions
+        self.init(
+            attributes: attributes,
+            typedAttributes: [:],
+            header: header,
+            blocks: blocks,
+            span: span,
+            xadOptions: xadOptions
+        )
     }
 }
 

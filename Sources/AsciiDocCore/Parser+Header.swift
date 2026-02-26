@@ -25,10 +25,12 @@ extension AdocParser {
     func detectHeader(
         into header: inout AdocHeader?,
         attrs docAttrs: inout [String: String?],
+        typedAttrs: inout [String: XADAttributeValue],
         it: inout TokenIter,
         env: inout AttrEnv,
         lockedAttributes: Set<String>,
-        includeDerivedAttributes: Bool
+        includeDerivedAttributes: Bool,
+        xadOptions: XADOptions
     ) {
         // ——— Header parsing (no blank lines allowed within header) ———
         // Header grammar at top of document:
@@ -145,6 +147,11 @@ extension AdocParser {
                     if !lockedAttributes.contains(name) {
                         docAttrs[name] = value
                         env.set(name, to: value)
+                        if let value, let typed = XADAttributeValue.parse(from: value, xadOptions: xadOptions) {
+                            typedAttrs[name] = typed
+                        } else {
+                            typedAttrs.removeValue(forKey: name)
+                        }
                     }
                     it.consume();
                     lastHeaderTok = tok
@@ -156,6 +163,7 @@ extension AdocParser {
                     if !lockedAttributes.contains(name) {
                         docAttrs[name] = nil
                         env.set(name, to: nil)
+                        typedAttrs.removeValue(forKey: name)
                     }
 
                     it.consume();

@@ -91,8 +91,10 @@ public final class DocumentRenderer {
             ]
         }
 
+        let typedAttributes = docToRender.typedAttributes.mapValues { $0.toJSONCompatible() }
         var context: [String: Any] = [
             "attributes": docToRender.attributes,
+            "typedAttributes": typedAttributes,
             "headerTitle": docToRender.header?.title?.plain ?? "",
             "blocks": blocks,
             "footnotes": footnotes.map { renderFootnoteDefinition($0, context: inlineContext) },

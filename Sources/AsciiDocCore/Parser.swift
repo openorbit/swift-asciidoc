@@ -246,16 +246,26 @@ public struct AdocParser: Sendable {
         var it = TokenIter(tokens: toks, text: preprocessed.source.text)
         var header: AdocHeader? = nil
         var docAttrs: [String: String?] = preprocessed.attributes
+        var typedAttrs: [String: XADAttributeValue] = [:]
+        if xadOptions.enabled {
+            for (key, value) in docAttrs {
+                if let value, let typed = XADAttributeValue.parse(from: value, xadOptions: xadOptions) {
+                    typedAttrs[key] = typed
+                }
+            }
+        }
         var env = AttrEnv(initial: docAttrs)
 
         // Header detection (keep your existing logic)
         detectHeader(
             into: &header,
             attrs: &docAttrs,
+            typedAttrs: &typedAttrs,
             it: &it,
             env: &env,
             lockedAttributes: lockedAttributeNames,
-            includeDerivedAttributes: includeHeaderDerivedAttributes
+            includeDerivedAttributes: includeHeaderDerivedAttributes,
+            xadOptions: xadOptions
         )
 
         // Body blocks via parseBlocks
@@ -267,7 +277,7 @@ public struct AdocParser: Sendable {
             return AdocRange(start: first.range.start, end: last.range.end)
         }()
 
-        return AdocDocument(attributes: docAttrs, header: header, blocks: bodyBlocks, span: docSpan, xadOptions: xadOptions)
+        return AdocDocument(attributes: docAttrs, typedAttributes: typedAttrs, header: header, blocks: bodyBlocks, span: docSpan, xadOptions: xadOptions)
     }
 
 

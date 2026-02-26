@@ -34,6 +34,7 @@ public final class FootnoteResolver {
         
         let newDoc = AdocDocument(
             attributes: document.attributes,
+            typedAttributes: document.typedAttributes,
             header: document.header,
             blocks: newBlocks,
             span: document.span,
