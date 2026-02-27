@@ -9,7 +9,7 @@ extension AdocParser {
     /// IMPORTANT: this function CONSUMES the `.dlistItem` token.
     private func makeDListItem(
         it: inout TokenIter,
-        env: AttrEnv
+        env: inout AttrEnv
     ) -> AdocDListItem {
         guard let tok = it.peek(),
               case .dlistItem(let termRange, _, let descRange) = tok.kind
@@ -96,7 +96,7 @@ extension AdocParser {
     func parseDList(
         for marker: String,
         it: inout TokenIter,
-        env: AttrEnv,
+        env: inout AttrEnv,
         stack: inout [String]
     ) -> AdocDList? {
         stack.append(marker)
@@ -123,7 +123,7 @@ extension AdocParser {
 
                 if thisMarker == marker {
                     // Same marker → sibling item at this level
-                    let item = makeDListItem(it: &it, env: env)   // consumes token
+                    let item = makeDListItem(it: &it, env: &env)   // consumes token
                     items.append(item)
                     continue outer
                 }
@@ -139,7 +139,7 @@ extension AdocParser {
 
                 // New marker not in any outer level → nested dlist under last item
                 if var lastItem = items.popLast() {
-                    if let nested = parseDList(for: thisMarker, it: &it, env: env, stack: &stack) {
+                    if let nested = parseDList(for: thisMarker, it: &it, env: &env, stack: &stack) {
                         lastItem.blocks.append(.dlist(nested))
                     }
                     items.append(lastItem)
@@ -167,12 +167,12 @@ extension AdocParser {
                         let line       = nextTok.string
                         let thisMarker = String(line[sepRange])
 
-                        if let nested = parseDList(for: thisMarker, it: &it, env: env, stack: &stack) {
+                        if let nested = parseDList(for: thisMarker, it: &it, env: &env, stack: &stack) {
                             lastItem.blocks.append(.dlist(nested))
                         }
 
                     default:
-                        if let nestedBlock = parseBlock(it: &it, env: env) {
+                        if let nestedBlock = parseBlock(it: &it, env: &env) {
                             lastItem.blocks.append(nestedBlock)
                         }
                     }

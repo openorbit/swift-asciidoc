@@ -91,17 +91,64 @@ public enum XADAttributeValue: Sendable, Equatable {
 package struct AttrEnv {
     // name → optional value (nil means unset)
     private(set) var values: [String: String?]
+    private(set) var typedValues: [String: XADAttributeValue]
+    let xadOptions: XADOptions
 
-    package init(initial: [String: String?] = [:]) {
+    package init(
+        initial: [String: String?] = [:],
+        typedAttributes: [String: XADAttributeValue] = [:],
+        xadOptions: XADOptions = .init(enabled: false)
+    ) {
         self.values = initial
+        self.typedValues = typedAttributes
+        self.xadOptions = xadOptions
     }
 
     mutating func set(_ name: String, to value: String?) {
         values[name] = value
     }
 
+    mutating func applyAttributeSet(name: String, value: String?) {
+        values[name] = value
+        guard xadOptions.enabled else { return }
+        let rawValue = value ?? ""
+        if isXADPathName(name) {
+            let typed = XADAttributeValue.parse(from: rawValue, xadOptions: xadOptions) ?? .string(rawValue)
+            setTypedPath(name, value: typed)
+            return
+        }
+        if let value, let typed = XADAttributeValue.parse(from: value, xadOptions: xadOptions) {
+            typedValues[name] = typed
+        } else {
+            typedValues.removeValue(forKey: name)
+        }
+    }
+
+    mutating func applyAttributeUnset(name: String) {
+        values[name] = nil
+        guard xadOptions.enabled else { return }
+        if isXADPathName(name) {
+            setTypedPath(name, value: .null)
+        } else {
+            typedValues.removeValue(forKey: name)
+        }
+    }
+
     func value(for name: String) -> String? {
         values[name] ?? nil
+    }
+
+    func resolveAttribute(_ name: String, join: String? = nil) -> String? {
+        if xadOptions.enabled, isXADPathName(name), let typed = resolveTypedPath(name) {
+            return stringify(typed, join: join)
+        }
+        if let raw = value(for: name) {
+            return raw
+        }
+        if xadOptions.enabled, let typed = typedValues[name] {
+            return stringify(typed, join: join)
+        }
+        return nil
     }
 
     /// Expand {attr} in a string using the *current* environment.
@@ -122,7 +169,7 @@ package struct AttrEnv {
                 }
                 if j < end, s[j] == "}" {
                     let name = String(s[nameStart..<j])
-                    if let v = value(for: name) {
+                    if let v = resolveAttribute(name) {
                         result += v
                     } else {
                         // Unknown attribute → keep literal {name}
@@ -140,6 +187,169 @@ package struct AttrEnv {
     }
 }
 
+
+private enum XADPathSegment {
+    case key(String)
+    case index(Int)
+}
+
+private func isXADPathName(_ name: String) -> Bool {
+    name.contains(".") || name.contains("[")
+}
+
+private func parseXADPathSegments(_ path: String, env: AttrEnv) -> [XADPathSegment]? {
+    var segments: [XADPathSegment] = []
+    var token = ""
+    var index = path.startIndex
+
+    func appendToken() -> Bool {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        token.removeAll(keepingCapacity: true)
+        guard !trimmed.isEmpty else { return true }
+        if trimmed.allSatisfy({ $0.isNumber }), let value = Int(trimmed) {
+            segments.append(.index(value))
+        } else {
+            segments.append(.key(trimmed))
+        }
+        return true
+    }
+
+    while index < path.endIndex {
+        let ch = path[index]
+        if ch == "." {
+            _ = appendToken()
+            index = path.index(after: index)
+            continue
+        }
+        if ch == "[" {
+            _ = appendToken()
+            let close = path[index...].firstIndex(of: "]")
+            guard let close else { return nil }
+            let content = path[path.index(after: index)..<close]
+            let resolved = resolveBracketIndex(content, env: env)
+            guard let resolved, let intValue = Int(resolved) else { return nil }
+            segments.append(.index(intValue))
+            index = path.index(after: close)
+            continue
+        }
+        token.append(ch)
+        index = path.index(after: index)
+    }
+    _ = appendToken()
+    return segments.isEmpty ? nil : segments
+}
+
+private func resolveBracketIndex(_ content: Substring, env: AttrEnv) -> String? {
+    let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+    if trimmed.hasPrefix("{") && trimmed.hasSuffix("}") {
+        let start = trimmed.index(after: trimmed.startIndex)
+        let end = trimmed.index(before: trimmed.endIndex)
+        let name = String(trimmed[start..<end])
+        return env.resolveAttribute(name)
+    }
+    return String(trimmed)
+}
+
+private extension AttrEnv {
+    func resolveTypedPath(_ path: String) -> XADAttributeValue? {
+        guard let segments = parseXADPathSegments(path, env: self), !segments.isEmpty else {
+            return nil
+        }
+        guard case .key(let root) = segments[0], let rootValue = typedValues[root] else {
+            return nil
+        }
+        var current: XADAttributeValue? = rootValue
+        for segment in segments.dropFirst() {
+            guard let value = current else { return nil }
+            switch (value, segment) {
+            case (.dictionary(let dict), .key(let key)):
+                current = dict[key]
+            case (.array(let array), .index(let idx)):
+                guard idx >= 0, idx < array.count else { return nil }
+                current = array[idx]
+            default:
+                return nil
+            }
+        }
+        return current
+    }
+
+    func stringify(_ value: XADAttributeValue, join: String?) -> String {
+        switch value {
+        case .string(let s):
+            return s
+        case .number(let n):
+            return String(n)
+        case .bool(let b):
+            return b ? "true" : "false"
+        case .null:
+            return "null"
+        case .array(let array):
+            if let join {
+                return array.map { stringify($0, join: nil) }.joined(separator: join)
+            }
+            return jsonString(from: value)
+        case .dictionary:
+            return jsonString(from: value)
+        }
+    }
+
+    func jsonString(from value: XADAttributeValue) -> String {
+        let obj = value.toJSONCompatible()
+        guard JSONSerialization.isValidJSONObject(obj),
+              let data = try? JSONSerialization.data(withJSONObject: obj, options: []) else {
+            return ""
+        }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    mutating func setTypedPath(_ path: String, value: XADAttributeValue) {
+        guard let segments = parseXADPathSegments(path, env: self), !segments.isEmpty else { return }
+        guard case .key(let root) = segments[0] else { return }
+        let updated = setTypedValue(
+            current: typedValues[root],
+            segments: segments.dropFirst(),
+            value: value
+        )
+        typedValues[root] = updated
+    }
+
+    func setTypedValue(
+        current: XADAttributeValue?,
+        segments: ArraySlice<XADPathSegment>,
+        value: XADAttributeValue
+    ) -> XADAttributeValue {
+        guard let first = segments.first else { return value }
+        let rest = segments.dropFirst()
+
+        switch first {
+        case .key(let key):
+            var dict: [String: XADAttributeValue]
+            if case .dictionary(let existing)? = current {
+                dict = existing
+            } else {
+                dict = [:]
+            }
+            let updated = setTypedValue(current: dict[key], segments: rest, value: value)
+            dict[key] = updated
+            return .dictionary(dict)
+        case .index(let idx):
+            var array: [XADAttributeValue]
+            if case .array(let existing)? = current {
+                array = existing
+            } else {
+                array = []
+            }
+            if idx >= array.count {
+                array.append(contentsOf: repeatElement(.null, count: idx - array.count + 1))
+            }
+            let updated = setTypedValue(current: array[idx], segments: rest, value: value)
+            array[idx] = updated
+            return .array(array)
+        }
+    }
+}
 
 package extension AdocInline {
     func applyingAttributes(using env: AttrEnv) -> AdocInline {

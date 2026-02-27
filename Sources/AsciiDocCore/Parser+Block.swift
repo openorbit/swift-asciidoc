@@ -25,13 +25,156 @@ private func parseDirectivePayload(_ payload: String) -> (target: String, body: 
     )
 }
 
+private func parseMacroAttributeList(_ body: String) -> [String: String] {
+    var result: [String: String] = [:]
+    var current = ""
+    var inQuotes = false
+    var quoteChar: Character? = nil
+
+    func flush() {
+        let part = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        current = ""
+        guard !part.isEmpty else { return }
+        if let eq = part.firstIndex(of: "=") {
+            let key = part[..<eq].trimmingCharacters(in: .whitespacesAndNewlines)
+            let valueStart = part.index(after: eq)
+            var value = part[valueStart...].trimmingCharacters(in: .whitespacesAndNewlines)
+            if value.count >= 2 {
+                if (value.first == "\"" && value.last == "\"") || (value.first == "'" && value.last == "'") {
+                    value = String(value.dropFirst().dropLast())
+                }
+            }
+            if !key.isEmpty {
+                result[String(key)] = String(value)
+            }
+        } else {
+            result[part] = ""
+        }
+    }
+
+    for ch in body {
+        if inQuotes {
+            if ch == "\\" {
+                current.append(ch)
+                continue
+            }
+            if let currentQuote = quoteChar, ch == currentQuote {
+                inQuotes = false
+                quoteChar = nil
+            }
+            current.append(ch)
+            continue
+        }
+
+        if ch == "\"" || ch == "'" {
+            inQuotes = true
+            quoteChar = ch
+            current.append(ch)
+            continue
+        }
+
+        if ch == "," {
+            flush()
+            continue
+        }
+        current.append(ch)
+    }
+
+    flush()
+    return result
+}
+
+private func normalizeXADAttributeValue(_ value: String, xadOptions: XADOptions) -> String {
+    guard xadOptions.enabled else { return value }
+    var index = value.startIndex
+    while index < value.endIndex, value[index].isWhitespace {
+        index = value.index(after: index)
+    }
+    guard index < value.endIndex, value[index] == "\\" else { return value }
+    let nextIndex = value.index(after: index)
+    guard nextIndex < value.endIndex else { return value }
+    let nextChar = value[nextIndex]
+    guard nextChar == "{" || nextChar == "[" else { return value }
+    var result = value
+    result.remove(at: index)
+    return result
+}
+
+private func consumesMultilineJSON(_ value: String, xadOptions: XADOptions) -> Bool {
+    guard xadOptions.enabled else { return false }
+    var index = value.startIndex
+    while index < value.endIndex, value[index].isWhitespace {
+        index = value.index(after: index)
+    }
+    guard index < value.endIndex else { return false }
+    let lead = value[index]
+    guard lead == "{" || lead == "[" else { return false }
+    return !isJSONBalanced(value)
+}
+
+private func isJSONBalanced(_ value: String) -> Bool {
+    var braceDepth = 0
+    var bracketDepth = 0
+    var inString = false
+    var escapeNext = false
+
+    for ch in value {
+        if inString {
+            if escapeNext {
+                escapeNext = false
+                continue
+            }
+            if ch == "\\" {
+                escapeNext = true
+                continue
+            }
+            if ch == "\"" {
+                inString = false
+            }
+            continue
+        }
+
+        if ch == "\"" {
+            inString = true
+            continue
+        }
+        if ch == "{" { braceDepth += 1 }
+        else if ch == "}" { braceDepth -= 1 }
+        else if ch == "[" { bracketDepth += 1 }
+        else if ch == "]" { bracketDepth -= 1 }
+    }
+
+    return braceDepth <= 0 && bracketDepth <= 0 && !inString
+}
+
+private func consumeAttributeMultilineJSON(
+    initial: String,
+    it: inout TokenIter,
+    xadOptions: XADOptions
+) -> String {
+    guard consumesMultilineJSON(initial, xadOptions: xadOptions) else { return initial }
+
+    var result = initial
+    while true {
+        guard let nextTok = it.peek(), case .text(let r) = nextTok.kind else { break }
+        let nextLine = it.textFromRelative(range: r, token: nextTok)
+        result.append("\n")
+        result.append(nextLine)
+        it.consume()
+        if !consumesMultilineJSON(result, xadOptions: xadOptions) {
+            break
+        }
+    }
+    return result
+}
+
 extension AdocParser {
 
     // Parse a sequence of blocks until `stop` says “this token belongs to the caller”.
     // Parse blocks until `stop` returns true for the *next* token.
     func parseBlocks(
         it: inout TokenIter,
-        env: AttrEnv,
+        env: inout AttrEnv,
         stop: (Token) -> Bool
     ) -> [AdocBlock] {
         var blocks: [AdocBlock] = []
@@ -40,7 +183,7 @@ extension AdocParser {
             let before = it.index
 
 
-            if let block = parseBlock(it: &it, env: env) {
+            if let block = parseBlock(it: &it, env: &env) {
                 blocks.append(block)
             } else {
                 // Safety to avoid infinite loops: always consume something.
@@ -55,12 +198,37 @@ extension AdocParser {
     }
     func parseBlock(
         it: inout TokenIter,
-        env: AttrEnv
+        env: inout AttrEnv
     ) -> AdocBlock? {
         // Slurp block metadata (ID, roles, options, attributes, title, span)
         let meta = consumeBlockMeta(it: &it, env: env)
 
         guard let tok = it.peek() else { return nil }
+
+        if case .attrSet(let nameR, let valueR) = tok.kind {
+            let name = it.textFromRelative(range: nameR, token: tok)
+            var value = valueR.map { it.textFromRelative(range: $0, token: tok) }
+            it.consume()
+            if let raw = value {
+                value = normalizeXADAttributeValue(raw, xadOptions: env.xadOptions)
+            }
+            if let raw = value {
+                value = consumeAttributeMultilineJSON(
+                    initial: raw,
+                    it: &it,
+                    xadOptions: env.xadOptions
+                )
+            }
+            env.applyAttributeSet(name: name, value: value)
+            return nil
+        }
+
+        if case .attrUnset(let nameR) = tok.kind {
+            let name = it.textFromRelative(range: nameR, token: tok)
+            it.consume()
+            env.applyAttributeUnset(name: name)
+            return nil
+        }
 
         var inner: AdocBlock?
 
@@ -68,7 +236,7 @@ extension AdocParser {
         switch tok.kind {
         case .atxSection(let level, let titleRange):
             if let section = parseSection(from: tok, level: level, titleRange: titleRange,
-                                          it: &it, env: env) {
+                                          it: &it, env: &env) {
                 var block = AdocBlock.section(section)
                 meta.applyMeta(to: &block)
                 return block;
@@ -83,7 +251,7 @@ extension AdocParser {
                     for: key,
                     listKind: listKind,
                     it: &it,
-                    env: env,
+                    env: &env,
                     stack: &stack,
                     bibliographyStyle: isBibliography
                 ) {
@@ -102,7 +270,7 @@ extension AdocParser {
                 if let dlist = parseDList(
                     for: marker,
                     it: &it,
-                    env: env,
+                    env: &env,
                     stack: &stack
                 ) {
                     inner = .dlist(dlist)
@@ -165,12 +333,12 @@ extension AdocParser {
                 }
 
             case .quote:
-                if let q = parseQuote(it: &it, env: env) {
+                if let q = parseQuote(it: &it, env: &env) {
                     inner = .quote(q)
                 }
 
             case .verseBlock:
-                if let q = parseQuote(it: &it, env: env) {
+                if let q = parseQuote(it: &it, env: &env) {
                     let span = combinedSpan(metaSpan: meta.span, innerSpan: q.span)
                     let verse = AdocVerse(
                         text: nil,
@@ -204,17 +372,17 @@ extension AdocParser {
                 }
 
             case .sidebar:
-                if let s = parseSidebar(it: &it, env: env) {
+                if let s = parseSidebar(it: &it, env: &env) {
                     inner = .sidebar(s)
                 }
 
             case .example:
-                if let e = parseExample(it: &it, env: env) {
+                if let e = parseExample(it: &it, env: &env) {
                     inner = .example(e)
                 }
 
             case .open:
-                if let o = parseOpen(it: &it, env: env) {
+                if let o = parseOpen(it: &it, env: &env) {
                     inner = .open(o)
                 }
 
@@ -258,6 +426,39 @@ extension AdocParser {
                      )
                      inner = .math(mathBlock)
                      break
+                 }
+
+                 if name == "get", env.xadOptions.enabled {
+                     let attrs = parseMacroAttributeList(payloadParts.body ?? "")
+                     if let path = attrs["path"] {
+                         let join = attrs["join"]
+                         let span = it.spanForLine(tok)
+                         let text: String
+                         if let resolved = env.resolveAttribute(path, join: join) {
+                             text = resolved
+                         } else {
+                             text = String(tok.string)
+                         }
+                         let para = AdocParagraph(
+                             text: AdocText(plain: text, span: span),
+                             id: meta.id,
+                             title: meta.title,
+                             reftext: nil,
+                             meta: .init(),
+                             span: span
+                         )
+                         inner = .paragraph(para)
+                         break
+                     }
+                 }
+
+                 if name == "set", env.xadOptions.enabled {
+                     let attrs = parseMacroAttributeList(payloadParts.body ?? "")
+                     if let path = attrs["path"] {
+                         let rawValue = attrs["value"] ?? ""
+                         env.applyAttributeSet(name: path, value: rawValue)
+                         return nil
+                     }
                  }
 
                  let macro = AdocBlockMacro(

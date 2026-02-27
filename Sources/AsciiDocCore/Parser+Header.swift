@@ -171,21 +171,13 @@ extension AdocParser {
                     }
 
                     if !lockedAttributes.contains(name) {
-                        docAttrs[name] = value
-                        env.set(name, to: value)
-                        if let value, let typed = XADAttributeValue.parse(from: value, xadOptions: xadOptions) {
-                            typedAttrs[name] = typed
-                        } else {
-                            typedAttrs.removeValue(forKey: name)
-                        }
+                        env.applyAttributeSet(name: name, value: value)
                     }
                     continue attrsLoop
                 case .attrUnset(let nameR):
                     let name = it.textFromRelative(range: nameR, token: tok)
                     if !lockedAttributes.contains(name) {
-                        docAttrs[name] = nil
-                        env.set(name, to: nil)
-                        typedAttrs.removeValue(forKey: name)
+                        env.applyAttributeUnset(name: name)
                     }
 
                     it.consume();
@@ -204,6 +196,8 @@ extension AdocParser {
 
             // If we produced any part of the header, ensure attributes map is non-nil
             if headerSeen {
+                docAttrs = env.values
+                typedAttrs = env.typedValues
                 if docAttrs.isEmpty { docAttrs = [:] }
                 // Ensure we have a header object even if it was attributes-only
                 if header == nil {
@@ -228,6 +222,7 @@ extension AdocParser {
                         lockedAttributes: lockedAttributes
                     )
                 }
+                env = AttrEnv(initial: docAttrs, typedAttributes: typedAttrs, xadOptions: xadOptions)
             }
         }
     }

@@ -9,7 +9,7 @@ extension AdocParser {
         level: Int,
         titleRange: Range<String.Index>,
         it: inout TokenIter,
-        env: AttrEnv
+        env: inout AttrEnv
     ) -> AdocSection? {
         // Consume the section title line
         it.consume()
@@ -23,7 +23,7 @@ extension AdocParser {
         titleText      = titleText.applyingAttributes(using: env)
 
         // Body: everything until we see a section with level <= this one
-        let bodyBlocks = parseBlocks(it: &it, env: env) { nextTok in
+        let bodyBlocks = parseBlocks(it: &it, env: &env) { nextTok in
             if case .atxSection(let nextLevel, _) = nextTok.kind {
                 return nextLevel <= level  // stop at same or higher ATX-level
             }

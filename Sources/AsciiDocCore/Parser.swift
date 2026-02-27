@@ -254,7 +254,7 @@ public struct AdocParser: Sendable {
                 }
             }
         }
-        var env = AttrEnv(initial: docAttrs)
+        var env = AttrEnv(initial: docAttrs, typedAttributes: typedAttrs, xadOptions: xadOptions)
 
         // Header detection (keep your existing logic)
         detectHeader(
@@ -267,9 +267,13 @@ public struct AdocParser: Sendable {
             includeDerivedAttributes: includeHeaderDerivedAttributes,
             xadOptions: xadOptions
         )
+        docAttrs = env.values
+        typedAttrs = env.typedValues
 
         // Body blocks via parseBlocks
-        let bodyBlocks = parseBlocks(it: &it, env: env) { _ in false }
+        let bodyBlocks = parseBlocks(it: &it, env: &env) { _ in false }
+        docAttrs = env.values
+        typedAttrs = env.typedValues
 
         // Document span can still be computed from first/last token
         let docSpan: AdocRange? = {

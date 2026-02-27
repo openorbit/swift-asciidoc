@@ -6,7 +6,7 @@
 extension AdocParser {
     func parseOpen(
         it: inout TokenIter,
-        env: AttrEnv
+        env: inout AttrEnv
     ) -> AdocOpen? {
         guard let open = it.peek(),
               case .blockFence(let kind, let fenceLen) = open.kind,
@@ -29,7 +29,7 @@ extension AdocParser {
                 it.consume()
 
             default:
-                if let b = parseBlock(it: &it, env: env) {
+                if let b = parseBlock(it: &it, env: &env) {
                     blocks.append(b)
                 } else {
                     it.consume()
