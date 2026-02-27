@@ -125,6 +125,50 @@ import Testing
     }
 }
 
+@Test func typedAttributesGetMacroResolves() {
+    let source = """
+    :page: {size:"A4"}
+    get::page.size[]
+    """
+    let parser = AdocParser()
+    let doc = parser.parse(text: source, xadOptions: XADOptions(enabled: true))
+
+    guard case .paragraph(let para) = doc.blocks.first else {
+        Issue.record("Expected get macro to render as paragraph.")
+        return
+    }
+    #expect(para.text.plain == "A4")
+}
+
+@Test func typedAttributesSetMacroUpdatesValues() {
+    let source = """
+    set::page.size[Letter]
+    get::page.size[]
+    """
+    let parser = AdocParser()
+    let doc = parser.parse(text: source, xadOptions: XADOptions(enabled: true))
+
+    guard case .paragraph(let para) = doc.blocks.first else {
+        Issue.record("Expected get macro output after set macro.")
+        return
+    }
+    #expect(para.text.plain == "Letter")
+}
+
+@Test func typedAttributesResolveShorthandPath() {
+    let source = """
+    :page: {size:"A4"}
+    Size is {page.size}
+    """
+    let parser = AdocParser()
+    let doc = parser.parse(text: source, xadOptions: XADOptions(enabled: true))
+
+    guard case .paragraph(let para) = doc.blocks.first else {
+        Issue.record("Expected paragraph with shorthand attribute.")
+        return
+    }
+    #expect(para.text.plain == "Size is A4")
+}
 
 @Test func typedAttributeParseMultilineAttr() {
     let source = """

@@ -430,7 +430,8 @@ extension AdocParser {
 
                  if name == "get", env.xadOptions.enabled {
                      let attrs = parseMacroAttributeList(payloadParts.body ?? "")
-                     if let path = attrs["path"] {
+                     let path = attrs["path"] ?? (payloadParts.target.isEmpty ? nil : payloadParts.target)
+                     if let path {
                          let join = attrs["join"]
                          let span = it.spanForLine(tok)
                          let text: String
@@ -454,9 +455,11 @@ extension AdocParser {
 
                  if name == "set", env.xadOptions.enabled {
                      let attrs = parseMacroAttributeList(payloadParts.body ?? "")
-                     if let path = attrs["path"] {
-                         let rawValue = attrs["value"] ?? ""
-                         env.applyAttributeSet(name: path, value: rawValue)
+                     let path = attrs["path"] ?? (payloadParts.target.isEmpty ? nil : payloadParts.target)
+                     if let path {
+                         let rawValue = attrs["value"] ?? payloadParts.body ?? ""
+                         let normalizedValue = normalizeXADAttributeValue(rawValue, xadOptions: env.xadOptions)
+                         env.applyAttributeSet(name: path, value: normalizedValue)
                          return nil
                      }
                  }
