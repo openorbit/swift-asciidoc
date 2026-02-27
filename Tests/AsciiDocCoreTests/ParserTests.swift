@@ -307,7 +307,7 @@ struct ParserTests {
       //#expect(secs.contains(where: { $0.level == 1 && $0.title == "Doc" }))
       #expect(secs.contains(where: { $0.level == 1 && $0.title == "Section" }))
 
-      let paras = ASGInspector.paragraphs(asg)
+      let _ = ASGInspector.paragraphs(asg)
       //#expect(paras.contains("Intro para"))
 
       let ls = ASGInspector.lists(asg)
