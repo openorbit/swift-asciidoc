@@ -143,7 +143,33 @@ extension AdocParser {
                 switch tok.kind {
                 case .attrSet(let nameR, let valueR):
                     let name = it.textFromRelative(range: nameR, token: tok)
-                    let value = valueR.map { it.textFromRelative(range: $0, token: tok) }
+                    var value = valueR.map { it.textFromRelative(range: $0, token: tok) }
+
+                    it.consume()
+                    lastHeaderTok = tok
+                    headerSeen = true
+
+                    if let initial = value {
+                        value = consumeAttributeContinuation(
+                            initial: initial,
+                            it: &it,
+                            lastHeaderTok: &lastHeaderTok
+                        )
+                    }
+
+                    if let raw = value {
+                        value = normalizeXADAttributeValue(raw, xadOptions: xadOptions)
+                    }
+
+                    if let raw = value {
+                        value = consumeAttributeMultilineJSON(
+                            initial: raw,
+                            it: &it,
+                            lastHeaderTok: &lastHeaderTok,
+                            xadOptions: xadOptions
+                        )
+                    }
+
                     if !lockedAttributes.contains(name) {
                         docAttrs[name] = value
                         env.set(name, to: value)
@@ -153,10 +179,6 @@ extension AdocParser {
                             typedAttrs.removeValue(forKey: name)
                         }
                     }
-                    it.consume();
-                    lastHeaderTok = tok
-                    
-                    headerSeen = true
                     continue attrsLoop
                 case .attrUnset(let nameR):
                     let name = it.textFromRelative(range: nameR, token: tok)
@@ -210,6 +232,128 @@ extension AdocParser {
         }
     }
 
+}
+
+private func stripAttributeContinuation(_ value: String) -> (String, Bool) {
+    var end = value.endIndex
+    while end > value.startIndex {
+        let before = value.index(before: end)
+        if value[before].isWhitespace {
+            end = before
+        } else {
+            break
+        }
+    }
+    guard end > value.startIndex else { return (value, false) }
+    let last = value.index(before: end)
+    guard value[last] == "\\" else { return (value, false) }
+    return (String(value[..<last]), true)
+}
+
+private func consumeAttributeContinuation(
+    initial: String,
+    it: inout TokenIter,
+    lastHeaderTok: inout Token?
+) -> String {
+    var result = initial
+    while true {
+        let (stripped, didStrip) = stripAttributeContinuation(result)
+        guard didStrip else { break }
+        result = stripped
+        guard let nextTok = it.peek(), case .text(let r) = nextTok.kind else { break }
+        let nextLine = it.textFromRelative(range: r, token: nextTok)
+        result.append(nextLine)
+        it.consume()
+        lastHeaderTok = nextTok
+    }
+    return result
+}
+
+private func normalizeXADAttributeValue(_ value: String, xadOptions: XADOptions) -> String {
+    guard xadOptions.enabled else { return value }
+    var index = value.startIndex
+    while index < value.endIndex, value[index].isWhitespace {
+        index = value.index(after: index)
+    }
+    guard index < value.endIndex, value[index] == "\\" else { return value }
+    let nextIndex = value.index(after: index)
+    guard nextIndex < value.endIndex else { return value }
+    let nextChar = value[nextIndex]
+    guard nextChar == "{" || nextChar == "[" else { return value }
+    var result = value
+    result.remove(at: index)
+    return result
+}
+
+private func consumesMultilineJSON(_ value: String, xadOptions: XADOptions) -> Bool {
+    guard xadOptions.enabled else { return false }
+    var index = value.startIndex
+    while index < value.endIndex, value[index].isWhitespace {
+        index = value.index(after: index)
+    }
+    guard index < value.endIndex else { return false }
+    let lead = value[index]
+    guard lead == "{" || lead == "[" else { return false }
+    return !isJSONBalanced(value)
+}
+
+private func isJSONBalanced(_ value: String) -> Bool {
+    var braceDepth = 0
+    var bracketDepth = 0
+    var inString = false
+    var escapeNext = false
+
+    for ch in value {
+        if inString {
+            if escapeNext {
+                escapeNext = false
+                continue
+            }
+            if ch == "\\" {
+                escapeNext = true
+                continue
+            }
+            if ch == "\"" {
+                inString = false
+            }
+            continue
+        }
+
+        if ch == "\"" {
+            inString = true
+            continue
+        }
+        if ch == "{" { braceDepth += 1 }
+        else if ch == "}" { braceDepth -= 1 }
+        else if ch == "[" { bracketDepth += 1 }
+        else if ch == "]" { bracketDepth -= 1 }
+    }
+
+    return braceDepth <= 0 && bracketDepth <= 0 && !inString
+}
+
+private func consumeAttributeMultilineJSON(
+    initial: String,
+    it: inout TokenIter,
+    lastHeaderTok: inout Token?,
+    xadOptions: XADOptions
+) -> String {
+    guard consumesMultilineJSON(initial, xadOptions: xadOptions) else { return initial }
+
+    var result = initial
+    while true {
+        guard let nextTok = it.peek(), case .text(let r) = nextTok.kind else { break }
+        let nextLine = it.textFromRelative(range: r, token: nextTok)
+        result.append("\n")
+        result.append(nextLine)
+        it.consume()
+        lastHeaderTok = nextTok
+
+        if !consumesMultilineJSON(result, xadOptions: xadOptions) {
+            break
+        }
+    }
+    return result
 }
 
 private func parseAuthorsLine(_ line: String) -> [HeaderAuthorInfo] {
