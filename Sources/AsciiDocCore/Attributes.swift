@@ -248,6 +248,9 @@ private func resolveBracketIndex(_ content: Substring, env: AttrEnv) -> String? 
         let name = String(trimmed[start..<end])
         return env.resolveAttribute(name)
     }
+    if let resolved = env.resolveAttribute(String(trimmed)) {
+        return resolved
+    }
     return String(trimmed)
 }
 

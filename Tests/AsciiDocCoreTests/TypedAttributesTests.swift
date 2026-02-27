@@ -170,6 +170,37 @@ import Testing
     #expect(para.text.plain == "Size is A4")
 }
 
+@Test func typedAttributesResolveArrayIndex() {
+    let source = """
+    :items: ["a", "b", "c"]
+    First is {items[0]}
+    """
+    let parser = AdocParser()
+    let doc = parser.parse(text: source, xadOptions: XADOptions(enabled: true))
+
+    guard case .paragraph(let para) = doc.blocks.first else {
+        Issue.record("Expected paragraph with array index access.")
+        return
+    }
+    #expect(para.text.plain == "First is a")
+}
+
+@Test func typedAttributesResolveArrayIndexFromAttribute() {
+    let source = """
+    :items: ["a", "b", "c"]
+    :idx: 2
+    Value is {items[idx]}
+    """
+    let parser = AdocParser()
+    let doc = parser.parse(text: source, xadOptions: XADOptions(enabled: true))
+
+    guard case .paragraph(let para) = doc.blocks.first else {
+        Issue.record("Expected paragraph with indexed attribute access.")
+        return
+    }
+    #expect(para.text.plain == "Value is c")
+}
+
 @Test func typedAttributeParseMultilineAttr() {
     let source = """
     :page: {
