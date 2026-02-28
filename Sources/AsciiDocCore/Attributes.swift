@@ -113,7 +113,8 @@ package struct AttrEnv {
         guard xadOptions.enabled else { return }
         let rawValue = value ?? ""
         if isXADPathName(name) {
-            let typed = XADAttributeValue.parse(from: rawValue, xadOptions: xadOptions) ?? .string(rawValue)
+            let normalizedScalar = stripSurroundingQuotes(rawValue)
+            let typed = XADAttributeValue.parse(from: normalizedScalar, xadOptions: xadOptions) ?? .string(normalizedScalar)
             setTypedPath(name, value: typed)
             return
         }
@@ -252,6 +253,16 @@ private func resolveBracketIndex(_ content: Substring, env: AttrEnv) -> String? 
         return resolved
     }
     return String(trimmed)
+}
+
+private func stripSurroundingQuotes(_ value: String) -> String {
+    guard value.count >= 2 else { return value }
+    let first = value.first
+    let last = value.last
+    guard let first, let last, first == last, (first == "\"" || first == "'") else {
+        return value
+    }
+    return String(value.dropFirst().dropLast())
 }
 
 private extension AttrEnv {

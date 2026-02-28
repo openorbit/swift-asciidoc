@@ -201,6 +201,22 @@ import Testing
     #expect(para.text.plain == "Value is c")
 }
 
+@Test func typedAttributesPathOverrideScalar() {
+    let source = """
+    :page: {size:"A4", margins:{top:"24mm", right:"22mm"}}
+    :page.margins.top: "18mm"
+    Top margin is {page.margins.top}
+    """
+    let parser = AdocParser()
+    let doc = parser.parse(text: source, xadOptions: XADOptions(enabled: true))
+
+    guard case .paragraph(let para) = doc.blocks.first else {
+        Issue.record("Expected paragraph with path override.")
+        return
+    }
+    #expect(para.text.plain == "Top margin is 18mm")
+}
+
 @Test func typedAttributeParseMultilineAttr() {
     let source = """
     :page: {
