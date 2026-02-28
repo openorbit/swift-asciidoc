@@ -1,5 +1,5 @@
 {
-  "originHash" : "c6ea4512e1e16b3ab843cc12fd09fe4f7046ae7901467803dc11fdd59feafad2",
+  "originHash" : "8b4f0636246db8e20a2d4049f8c471fde2c5538e097f97a2b517e4848503f9d7",
   "pins" : [
     {
       "identity" : "pathkit",
@@ -80,6 +80,15 @@
       "state" : {
         "branch" : "main",
         "revision" : "cc57a1b3f850ddbbd3848fb422addada324fab9b"
+      }
+    },
+    {
+      "identity" : "swift-yyjson",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/mattt/swift-yyjson.git",
+      "state" : {
+        "revision" : "6514373242de8a0765556dc54efdfd8a9567d71a",
+        "version" : "0.5.0"
       }
     }
   ],

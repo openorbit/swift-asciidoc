@@ -28,12 +28,15 @@ let package = Package(
         .package(url: "https://github.com/openorbit/swift-hunspell", branch: "main"),
         .package(url: "https://github.com/openorbit/swift-yaml", branch: "main"),
         .package(url: "https://github.com/apple/swift-docc-plugin", from: "1.0.0"),
+        .package(url: "https://github.com/mattt/swift-yyjson.git", from: "0.5.0"),
     ],
     targets: [
         // Core parsing/semantic engine (Foundation + RegexBuilder only)
         .target(
             name: "AsciiDocCore",
-            dependencies: [],
+            dependencies: [
+                .product(name: "YYJSON", package: "swift-yyjson")
+            ],
             path: "Sources/AsciiDocCore",
             swiftSettings: [
                 // Keep indexes Unicode-safe, discourage unsafe operations

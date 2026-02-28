@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import YYJSON
 
 public enum XADAttributeValue: Sendable, Equatable {
     case dictionary([String: XADAttributeValue])
@@ -19,13 +20,11 @@ public enum XADAttributeValue: Sendable, Equatable {
         guard let first = trimmed.first, first == "{" || first == "[" else { return nil }
         guard let data = trimmed.data(using: .utf8) else { return nil }
 
-        var options: JSONSerialization.ReadingOptions = []
-        if #available(macOS 15.0, iOS 18.0, tvOS 18.0, watchOS 11.0, visionOS 2.0, *) {
-            options.insert(.json5Allowed)
-        }
+        var options: YYJSONSerialization.ReadingOptions = []
+        options.insert(.json5Allowed)
 
         do {
-            let obj = try JSONSerialization.jsonObject(with: data, options: options)
+            let obj = try YYJSONSerialization.jsonObject(with: data, options: options)
             return XADAttributeValue.fromJSON(obj)
         } catch {
             return nil
@@ -68,6 +67,7 @@ public enum XADAttributeValue: Sendable, Equatable {
             return nil
         }
     }
+
 
     public func toJSONCompatible() -> Any {
         switch self {
@@ -334,8 +334,8 @@ private extension AttrEnv {
 
     func jsonString(from value: XADAttributeValue) -> String {
         let obj = value.toJSONCompatible()
-        guard JSONSerialization.isValidJSONObject(obj),
-              let data = try? JSONSerialization.data(withJSONObject: obj, options: []) else {
+        guard YYJSONSerialization.isValidJSONObject(obj),
+              let data = try? YYJSONSerialization.data(withJSONObject: obj, options: []) else {
             return ""
         }
         return String(data: data, encoding: .utf8) ?? ""
