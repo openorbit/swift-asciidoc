@@ -387,10 +387,16 @@ public struct AdocAuthor: Sendable, Equatable {
     public var address: String?
 }
 
+public struct AdocRevision: Sendable, Equatable {
+    public var number: String?
+    public var date: String?
+    public var remark: String?
+}
 
 public struct AdocHeader: Sendable, Equatable {
     public var title: AdocText?
     public var authors: [AdocAuthor]? // ISM-native author model
+    public var revisions: [AdocRevision]? // XAD: multiple revision lines
     public var location: AdocLocation? // ISM-native location
 
 }
