@@ -69,10 +69,30 @@ private extension XADProcessor {
                     index = endIndex + 1
                     continue
                 }
-                if name == "elif" || name == "else" || name == "end" {
+                if name == "elif" {
                     warnings.append(
                         AdocWarning(
-                            message: "Unexpected control directive: \(macro.name)",
+                            message: "elif without open if block",
+                            span: macro.span
+                        )
+                    )
+                    index += 1
+                    continue
+                }
+                if name == "else" {
+                    warnings.append(
+                        AdocWarning(
+                            message: "else without open if block",
+                            span: macro.span
+                        )
+                    )
+                    index += 1
+                    continue
+                }
+                if name == "end" {
+                    warnings.append(
+                        AdocWarning(
+                            message: "end without open control block",
                             span: macro.span
                         )
                     )
@@ -196,6 +216,7 @@ private extension XADProcessor {
         ]
         var currentIndex = startIndex + 1
         var depth = 0
+        var sawElse = false
 
         while currentIndex < blocks.count {
             let block = blocks[currentIndex]
@@ -209,8 +230,13 @@ private extension XADProcessor {
                 }
                 if name == "end" {
                     if depth == 0 {
-                        if let target = macro.target?.lowercased(), target == "if" || target == "for" {
-                            break
+                        if let target = macro.target?.lowercased(), !target.isEmpty, target != "if" {
+                            warnings.append(
+                                AdocWarning(
+                                    message: "end::\(target) does not match current if block",
+                                    span: macro.span
+                                )
+                            )
                         }
                         break
                     }
@@ -220,11 +246,32 @@ private extension XADProcessor {
                     continue
                 }
                 if depth == 0 && name == "elif" {
+                    if sawElse {
+                        warnings.append(
+                            AdocWarning(
+                                message: "elif after else in if block",
+                                span: macro.span
+                            )
+                        )
+                        currentIndex += 1
+                        continue
+                    }
                     branches.append((cond: conditionExpression(from: macro), blocks: []))
                     currentIndex += 1
                     continue
                 }
                 if depth == 0 && name == "else" {
+                    if sawElse {
+                        warnings.append(
+                            AdocWarning(
+                                message: "multiple else in if block",
+                                span: macro.span
+                            )
+                        )
+                        currentIndex += 1
+                        continue
+                    }
+                    sawElse = true
                     branches.append((cond: nil, blocks: []))
                     currentIndex += 1
                     continue
@@ -289,8 +336,13 @@ private extension XADProcessor {
                 }
                 if name == "end" {
                     if depth == 0 {
-                        if let target = macro.target?.lowercased(), target == "for" || target == "if" {
-                            break
+                        if let target = macro.target?.lowercased(), !target.isEmpty, target != "for" {
+                            warnings.append(
+                                AdocWarning(
+                                    message: "end::\(target) does not match current for block",
+                                    span: macro.span
+                                )
+                            )
                         }
                         break
                     }

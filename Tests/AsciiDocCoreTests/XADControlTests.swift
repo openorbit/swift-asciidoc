@@ -101,4 +101,45 @@ struct XADControlTests {
         #expect(items.contains("0: Ann"))
         #expect(items.contains("1: Bob"))
     }
+
+    @Test
+    func endWithoutOpenWarns() {
+        let src = """
+        end::[]
+        """
+
+        let parser = AdocParser()
+        let doc = parser.parse(text: src, xadOptions: XADOptions(enabled: true))
+        let processed = XADProcessor().apply(document: doc)
+        #expect(processed.warnings.contains { $0.message.contains("end without open") })
+    }
+
+    @Test
+    func elseWithoutIfWarns() {
+        let src = """
+        else::[]
+        Hello
+        """
+
+        let parser = AdocParser()
+        let doc = parser.parse(text: src, xadOptions: XADOptions(enabled: true))
+        let processed = XADProcessor().apply(document: doc)
+        #expect(processed.warnings.contains { $0.message.contains("else without open if") })
+    }
+
+    @Test
+    func endTypeMismatchWarns() {
+        let src = """
+        :list: ["Ann"]
+
+        for::[in=list, index=i, item=name]
+        * {i}: {name}
+        end::if[]
+        """
+
+        let parser = AdocParser()
+        let doc = parser.parse(text: src, xadOptions: XADOptions(enabled: true))
+        let processed = XADProcessor().apply(document: doc)
+        #expect(processed.warnings.contains { $0.message.contains("does not match current for block") })
+    }
 }
