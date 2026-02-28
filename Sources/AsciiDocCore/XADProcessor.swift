@@ -74,6 +74,10 @@ private extension XADProcessor {
                 if let definition = macros[name] {
                     switch definition.kind {
                     case .block:
+                        let (bodyBlocks, nextIndex) = consumeMacroBody(
+                            from: index + 1,
+                            blocks: blocks
+                        )
                         let expanded = expandBlockMacro(
                             macro,
                             definition: definition,
@@ -81,9 +85,11 @@ private extension XADProcessor {
                             warnings: &warnings,
                             locals: locals,
                             macros: macros,
-                            macroStack: macroStack
+                            macroStack: macroStack,
+                            bodyBlocks: bodyBlocks
                         )
                         result.append(contentsOf: expanded)
+                        index = nextIndex
                     case .inline:
                         warnings.append(
                             AdocWarning(
@@ -92,8 +98,8 @@ private extension XADProcessor {
                             )
                         )
                         result.append(block)
+                        index += 1
                     }
-                    index += 1
                     continue
                 }
 
@@ -397,6 +403,28 @@ private extension XADProcessor {
         return merged
     }
 
+    func consumeMacroBody(from startIndex: Int, blocks: [AdocBlock]) -> ([AdocBlock], Int) {
+        guard startIndex < blocks.count else {
+            return ([], startIndex)
+        }
+
+        let block = blocks[startIndex]
+        switch block {
+        case .section:
+            return ([], startIndex)
+        case .blockMacro(let macro):
+            let lowered = macro.name.lowercased()
+            switch lowered {
+            case "if", "for", "elif", "else", "end", "macro", "endmacro":
+                return ([], startIndex)
+            default:
+                return ([block], startIndex + 1)
+            }
+        default:
+            return ([block], startIndex + 1)
+        }
+    }
+
     func expandBlockMacro(
         _ macro: AdocBlockMacro,
         definition: MacroDefinition,
@@ -404,7 +432,8 @@ private extension XADProcessor {
         warnings: inout [AdocWarning],
         locals: [String: XADAttributeValue],
         macros: [String: MacroDefinition],
-        macroStack: [String]
+        macroStack: [String],
+        bodyBlocks: [AdocBlock]
     ) -> [AdocBlock] {
         if macroStack.contains(definition.name) {
             warnings.append(
@@ -428,11 +457,24 @@ private extension XADProcessor {
             warnings: &warnings,
             span: macro.span
         )
+        var macroLocals = mergedLocals
+        if !bodyBlocks.isEmpty {
+            let bodyText = bodyBlocks.map { $0.renderAsAsciiDoc() }.joined()
+            if macroLocals["body"] != nil {
+                warnings.append(
+                    AdocWarning(
+                        message: "macro body shadows local variable: body",
+                        span: macro.span
+                    )
+                )
+            }
+            macroLocals["body"] = .string(bodyText)
+        }
         return processBlocks(
             definition.body,
             env: &env,
             warnings: &warnings,
-            locals: mergedLocals,
+            locals: macroLocals,
             macros: macros,
             macroStack: macroStack + [definition.name]
         )

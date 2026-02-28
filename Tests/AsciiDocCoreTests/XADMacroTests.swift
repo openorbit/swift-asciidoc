@@ -66,4 +66,23 @@ struct XADMacroTests {
         let paras = paragraphTexts(from: processed.blocks)
         #expect(paras.contains("Say Hello Bob."))
     }
+
+    @Test
+    func blockMacroUsesBody() {
+        let src = """
+        macro::wrap[params="title"]
+        {title}: {body}
+        endmacro::wrap[]
+
+        wrap::[title=Note]
+        This is body paragraph
+        """
+
+        let parser = AdocParser()
+        let doc = parser.parse(text: src, xadOptions: XADOptions(enabled: true))
+        let processed = XADProcessor().apply(document: doc)
+        let paras = paragraphTexts(from: processed.blocks).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        #expect(paras.contains("Note: This is body paragraph"))
+        #expect(paras.filter { $0 == "This is body paragraph" }.isEmpty)
+    }
 }
