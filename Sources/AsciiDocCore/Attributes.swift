@@ -175,6 +175,10 @@ package struct AttrEnv {
         return nil
     }
 
+    package func resolveTypedValue(_ path: String) -> XADAttributeValue? {
+        resolveTypedPath(path)
+    }
+
     /// Expand {attr} in a string using the *current* environment.
     /// No re-parsing of markup is done; this is purely textual.
     package func expand(_ s: String) -> String {

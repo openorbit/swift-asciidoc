@@ -680,9 +680,11 @@ extension AdocParser {
                      }
                  }
 
-                 let macro = AdocBlockMacro(
+                 let macroAttrs = parseMacroAttributeList(payloadParts.body ?? "")
+                let macro = AdocBlockMacro(
                      name: name,
                      target: payloadParts.target,
+                    attributes: macroAttrs,
                      id: meta.id, title: meta.title, reftext: nil, // use metadata consumed
                      meta: .init(), // TODO: merge meta properly?
                      span: it.spanForLine(tok)
