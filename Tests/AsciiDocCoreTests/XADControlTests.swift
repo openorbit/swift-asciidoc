@@ -142,4 +142,156 @@ struct XADControlTests {
         let processed = XADProcessor().apply(document: doc)
         #expect(processed.warnings.contains { $0.message.contains("does not match current for block") })
     }
+
+    @Test
+    func invalidIfExpressionWarns() {
+        let src = """
+        if::[cond="{flag} == "]
+        Hello
+        end::if[]
+        """
+
+        let parser = AdocParser()
+        let doc = parser.parse(text: src, xadOptions: XADOptions(enabled: true))
+        let processed = XADProcessor().apply(document: doc)
+        #expect(processed.warnings.contains { $0.message.contains("invalid if expression") })
+    }
+
+    @Test
+    func invalidForExpressionWarns() {
+        let src = """
+        for::[in={list}
+        * item
+        end::for[]
+        """
+
+        let parser = AdocParser()
+        let doc = parser.parse(text: src, xadOptions: XADOptions(enabled: true))
+        let processed = XADProcessor().apply(document: doc)
+        #expect(processed.warnings.contains { $0.message.contains("invalid for in expression") })
+    }
+
+    @Test
+    func forArrayMissingIndexWarns() {
+        let src = """
+        :list: ["Ann"]
+
+        for::[in=list, item=name]
+        * {name}
+        end::for[]
+        """
+
+        let parser = AdocParser()
+        let doc = parser.parse(text: src, xadOptions: XADOptions(enabled: true))
+        let processed = XADProcessor().apply(document: doc)
+        #expect(processed.warnings.contains { $0.message.contains("requires index and item") })
+    }
+
+    @Test
+    func forArrayWithKeyValueWarns() {
+        let src = """
+        :list: ["Ann"]
+
+        for::[in=list, index=i, item=name, key=k, value=v]
+        * {i}: {name}
+        end::for[]
+        """
+
+        let parser = AdocParser()
+        let doc = parser.parse(text: src, xadOptions: XADOptions(enabled: true))
+        let processed = XADProcessor().apply(document: doc)
+        #expect(processed.warnings.contains { $0.message.contains("does not use key/value") })
+    }
+
+    @Test
+    func forDictionaryWithIndexItemWarns() {
+        let src = """
+        :map: {a: 1}
+
+        for::[in=map, key=k, value=v, index=i, item=name]
+        * {k} = {v}
+        end::for[]
+        """
+
+        let parser = AdocParser()
+        let doc = parser.parse(text: src, xadOptions: XADOptions(enabled: true))
+        let processed = XADProcessor().apply(document: doc)
+        #expect(processed.warnings.contains { $0.message.contains("does not use index/item") })
+    }
+
+    @Test
+    func forDictionaryMissingKeyWarns() {
+        let src = """
+        :map: {a: 1}
+
+        for::[in=map, value=v]
+        * {v}
+        end::for[]
+        """
+
+        let parser = AdocParser()
+        let doc = parser.parse(text: src, xadOptions: XADOptions(enabled: true))
+        let processed = XADProcessor().apply(document: doc)
+        #expect(processed.warnings.contains { $0.message.contains("requires key and value") })
+    }
+
+    @Test
+    func unknownVariableInIfWarns() {
+        let src = """
+        if::[cond="{missing} == true"]
+        Hello
+        end::if[]
+        """
+
+        let parser = AdocParser()
+        let doc = parser.parse(text: src, xadOptions: XADOptions(enabled: true))
+        let processed = XADProcessor().apply(document: doc)
+        #expect(processed.warnings.contains { $0.message.contains("unknown variable in if expression") })
+    }
+
+    @Test
+    func unknownVariableInForWarns() {
+        let src = """
+        for::[in=missing, index=i, item=name]
+        * {name}
+        end::for[]
+        """
+
+        let parser = AdocParser()
+        let doc = parser.parse(text: src, xadOptions: XADOptions(enabled: true))
+        let processed = XADProcessor().apply(document: doc)
+        #expect(processed.warnings.contains { $0.message.contains("unknown variable in for expression") })
+    }
+
+    @Test
+    func nonIterableForWarns() {
+        let src = """
+        :value: 42
+
+        for::[in=value, index=i, item=name]
+        * {name}
+        end::for[]
+        """
+
+        let parser = AdocParser()
+        let doc = parser.parse(text: src, xadOptions: XADOptions(enabled: true))
+        let processed = XADProcessor().apply(document: doc)
+        #expect(processed.warnings.contains { $0.message.contains("expects array or dictionary") })
+    }
+
+    @Test
+    func typeMismatchComparisonWarns() {
+        let src = """
+        :flag: true
+
+        if::[cond="{flag} > 1"]
+        Hello
+        end::if[]
+        """
+
+        let parser = AdocParser()
+        let doc = parser.parse(text: src, xadOptions: XADOptions(enabled: true))
+        let processed = XADProcessor().apply(document: doc)
+        #expect(processed.warnings.contains { $0.message.contains("type mismatch in comparison") })
+    }
 }

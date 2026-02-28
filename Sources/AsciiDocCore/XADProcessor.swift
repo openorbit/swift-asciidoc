@@ -6,6 +6,24 @@
 import Foundation
 import YYJSON
 
+private enum MacroKind {
+    case block
+    case inline
+}
+
+private struct MacroParam {
+    let name: String
+    let defaultValue: String?
+}
+
+private struct MacroDefinition {
+    let name: String
+    let kind: MacroKind
+    let params: [MacroParam]
+    let body: [AdocBlock]
+    let span: AdocRange?
+}
+
 public struct XADProcessor: Sendable {
     public init() {}
 
@@ -16,11 +34,17 @@ public struct XADProcessor: Sendable {
             xadOptions: document.xadOptions
         )
         var warnings = document.warnings
+        let (macroDefs, strippedBlocks) = collectMacroDefinitions(
+            from: document.blocks,
+            warnings: &warnings
+        )
         let processed = processBlocks(
-            document.blocks,
+            strippedBlocks,
             env: &env,
             warnings: &warnings,
-            locals: [:]
+            locals: [:],
+            macros: macroDefs,
+            macroStack: []
         )
         var updated = document
         updated.blocks = processed
@@ -36,7 +60,9 @@ private extension XADProcessor {
         _ blocks: [AdocBlock],
         env: inout AttrEnv,
         warnings: inout [AdocWarning],
-        locals: [String: XADAttributeValue]
+        locals: [String: XADAttributeValue],
+        macros: [String: MacroDefinition],
+        macroStack: [String]
     ) -> [AdocBlock] {
         var result: [AdocBlock] = []
         var index = 0
@@ -44,32 +70,63 @@ private extension XADProcessor {
         while index < blocks.count {
             let block = blocks[index]
             if case .blockMacro(let macro) = block {
-                let name = macro.name.lowercased()
-                if name == "if" {
+                let name = macro.name
+                if let definition = macros[name] {
+                    switch definition.kind {
+                    case .block:
+                        let expanded = expandBlockMacro(
+                            macro,
+                            definition: definition,
+                            env: &env,
+                            warnings: &warnings,
+                            locals: locals,
+                            macros: macros,
+                            macroStack: macroStack
+                        )
+                        result.append(contentsOf: expanded)
+                    case .inline:
+                        warnings.append(
+                            AdocWarning(
+                                message: "inline macro used in block context: \(name)",
+                                span: macro.span
+                            )
+                        )
+                        result.append(block)
+                    }
+                    index += 1
+                    continue
+                }
+
+                let lowered = name.lowercased()
+                if lowered == "if" {
                     let (endIndex, output) = expandIf(
                         from: index,
                         blocks: blocks,
                         env: &env,
                         warnings: &warnings,
-                        locals: locals
+                        locals: locals,
+                        macros: macros,
+                        macroStack: macroStack
                     )
                     result.append(contentsOf: output)
                     index = endIndex + 1
                     continue
                 }
-                if name == "for" {
+                if lowered == "for" {
                     let (endIndex, output) = expandFor(
                         from: index,
                         blocks: blocks,
                         env: &env,
                         warnings: &warnings,
-                        locals: locals
+                        locals: locals,
+                        macros: macros,
+                        macroStack: macroStack
                     )
                     result.append(contentsOf: output)
                     index = endIndex + 1
                     continue
                 }
-                if name == "elif" {
+                if lowered == "elif" {
                     warnings.append(
                         AdocWarning(
                             message: "elif without open if block",
@@ -79,7 +136,7 @@ private extension XADProcessor {
                     index += 1
                     continue
                 }
-                if name == "else" {
+                if lowered == "else" {
                     warnings.append(
                         AdocWarning(
                             message: "else without open if block",
@@ -89,7 +146,7 @@ private extension XADProcessor {
                     index += 1
                     continue
                 }
-                if name == "end" {
+                if lowered == "end" {
                     warnings.append(
                         AdocWarning(
                             message: "end without open control block",
@@ -101,9 +158,388 @@ private extension XADProcessor {
                 }
             }
 
-            let transformed = transformBlock(block, env: &env, warnings: &warnings, locals: locals)
+            let transformed = transformBlock(
+                block,
+                env: &env,
+                warnings: &warnings,
+                locals: locals,
+                macros: macros,
+                macroStack: macroStack
+            )
             result.append(transformed)
             index += 1
+        }
+
+        return result
+    }
+
+    func collectMacroDefinitions(
+        from blocks: [AdocBlock],
+        warnings: inout [AdocWarning]
+    ) -> ([String: MacroDefinition], [AdocBlock]) {
+        var definitions: [String: MacroDefinition] = [:]
+        var output: [AdocBlock] = []
+        var index = 0
+
+        while index < blocks.count {
+            let block = blocks[index]
+            switch block {
+            case .section(var section):
+                let (childDefs, childBlocks) = collectMacroDefinitions(from: section.blocks, warnings: &warnings)
+                section.blocks = childBlocks
+                for (name, def) in childDefs { definitions[name] = def }
+                output.append(.section(section))
+                index += 1
+
+            case .blockMacro(let macro) where macro.name.lowercased() == "macro":
+                guard let name = macro.target?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+                    warnings.append(
+                        AdocWarning(
+                            message: "macro definition missing name",
+                            span: macro.span
+                        )
+                    )
+                    index += 1
+                    continue
+                }
+                let (endIndex, body) = collectMacroBody(
+                    startIndex: index,
+                    macroName: name,
+                    blocks: blocks,
+                    warnings: &warnings
+                )
+                if endIndex == index {
+                    output.append(block)
+                    index += 1
+                    continue
+                }
+
+                let kind = parseMacroKind(macro.attributes["kind"])
+                let params = parseMacroParams(macro.attributes["params"])
+                let (nestedDefs, strippedBody) = collectMacroDefinitions(from: body, warnings: &warnings)
+                for (nestedName, def) in nestedDefs { definitions[nestedName] = def }
+
+                let definition = MacroDefinition(
+                    name: name,
+                    kind: kind,
+                    params: params,
+                    body: strippedBody,
+                    span: macro.span
+                )
+                if definitions[name] != nil {
+                    warnings.append(
+                        AdocWarning(
+                            message: "macro redefinition: \(name)",
+                            span: macro.span
+                        )
+                    )
+                }
+                definitions[name] = definition
+                index = endIndex + 1
+
+            case .blockMacro(let macro) where macro.name.lowercased() == "endmacro":
+                warnings.append(
+                    AdocWarning(
+                        message: "endmacro without open macro",
+                        span: macro.span
+                    )
+                )
+                index += 1
+
+            default:
+                output.append(block)
+                index += 1
+            }
+        }
+
+        return (definitions, output)
+    }
+
+    func collectMacroBody(
+        startIndex: Int,
+        macroName: String,
+        blocks: [AdocBlock],
+        warnings: inout [AdocWarning]
+    ) -> (Int, [AdocBlock]) {
+        var body: [AdocBlock] = []
+        var index = startIndex + 1
+        var depth = 0
+
+        while index < blocks.count {
+            let block = blocks[index]
+            if case .blockMacro(let macro) = block {
+                let name = macro.name.lowercased()
+                if name == "macro" {
+                    depth += 1
+                    body.append(block)
+                    index += 1
+                    continue
+                }
+                if name == "endmacro" {
+                    if depth == 0 {
+                        if let target = macro.target?.trimmingCharacters(in: .whitespacesAndNewlines),
+                           !target.isEmpty,
+                           target != macroName {
+                            warnings.append(
+                                AdocWarning(
+                                    message: "endmacro name does not match \(macroName)",
+                                    span: macro.span
+                                )
+                            )
+                        }
+                        return (index, body)
+                    }
+                    depth -= 1
+                    body.append(block)
+                    index += 1
+                    continue
+                }
+            }
+            body.append(block)
+            index += 1
+        }
+
+        warnings.append(
+            AdocWarning(
+                message: "missing endmacro for \(macroName)",
+                span: blocks[startIndex].span
+            )
+        )
+        return (startIndex, [])
+    }
+
+    func parseMacroKind(_ raw: String?) -> MacroKind {
+        switch raw?.lowercased() {
+        case "inline":
+            return .inline
+        default:
+            return .block
+        }
+    }
+
+    func parseMacroParams(_ raw: String?) -> [MacroParam] {
+        guard let raw, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return []
+        }
+        let parts = raw.split(separator: ",")
+        var params: [MacroParam] = []
+        for part in parts {
+            let trimmed = part.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            if let eq = trimmed.firstIndex(of: "=") {
+                let name = trimmed[..<eq].trimmingCharacters(in: .whitespacesAndNewlines)
+                let valueStart = trimmed.index(after: eq)
+                let defaultValue = trimmed[valueStart...].trimmingCharacters(in: .whitespacesAndNewlines)
+                if !name.isEmpty {
+                    params.append(MacroParam(name: String(name), defaultValue: String(defaultValue)))
+                }
+            } else {
+                params.append(MacroParam(name: String(trimmed), defaultValue: nil))
+            }
+        }
+        return params
+    }
+
+    func bindMacroParams(
+        definition: MacroDefinition,
+        args: [String: String],
+        warnings: inout [AdocWarning],
+        span: AdocRange?
+    ) -> [String: XADAttributeValue] {
+        var locals: [String: XADAttributeValue] = [:]
+        let paramNames = Set(definition.params.map { $0.name })
+
+        for param in definition.params {
+            if let value = args[param.name] {
+                locals[param.name] = .string(value)
+            } else if let defaultValue = param.defaultValue {
+                locals[param.name] = .string(defaultValue)
+            } else {
+                warnings.append(
+                    AdocWarning(
+                        message: "missing macro parameter: \(param.name)",
+                        span: span
+                    )
+                )
+            }
+        }
+
+        for (key, _) in args where !paramNames.contains(key) {
+            warnings.append(
+                AdocWarning(
+                    message: "unknown macro parameter: \(key)",
+                    span: span
+                )
+            )
+        }
+
+        return locals
+    }
+
+    func mergeMacroLocals(
+        base: [String: XADAttributeValue],
+        params: [String: XADAttributeValue],
+        warnings: inout [AdocWarning],
+        span: AdocRange?
+    ) -> [String: XADAttributeValue] {
+        var merged = base
+        for (key, value) in params {
+            if merged[key] != nil {
+                warnings.append(
+                    AdocWarning(
+                        message: "macro parameter shadows local variable: \(key)",
+                        span: span
+                    )
+                )
+            }
+            merged[key] = value
+        }
+        return merged
+    }
+
+    func expandBlockMacro(
+        _ macro: AdocBlockMacro,
+        definition: MacroDefinition,
+        env: inout AttrEnv,
+        warnings: inout [AdocWarning],
+        locals: [String: XADAttributeValue],
+        macros: [String: MacroDefinition],
+        macroStack: [String]
+    ) -> [AdocBlock] {
+        if macroStack.contains(definition.name) {
+            warnings.append(
+                AdocWarning(
+                    message: "macro recursion detected: \(definition.name)",
+                    span: macro.span
+                )
+            )
+            return [.blockMacro(macro)]
+        }
+
+        let paramLocals = bindMacroParams(
+            definition: definition,
+            args: macro.attributes,
+            warnings: &warnings,
+            span: macro.span
+        )
+        let mergedLocals = mergeMacroLocals(
+            base: locals,
+            params: paramLocals,
+            warnings: &warnings,
+            span: macro.span
+        )
+        return processBlocks(
+            definition.body,
+            env: &env,
+            warnings: &warnings,
+            locals: mergedLocals,
+            macros: macros,
+            macroStack: macroStack + [definition.name]
+        )
+    }
+
+    func expandInlineMacros(
+        _ inlines: [AdocInline],
+        env: AttrEnv,
+        macros: [String: MacroDefinition],
+        warnings: inout [AdocWarning],
+        macroStack: [String]
+    ) -> [AdocInline] {
+        var result: [AdocInline] = []
+        result.reserveCapacity(inlines.count)
+
+        for inline in inlines {
+            switch inline {
+            case .strong(let xs, let span):
+                let mapped = expandInlineMacros(xs, env: env, macros: macros, warnings: &warnings, macroStack: macroStack)
+                result.append(.strong(mapped, span: span))
+            case .emphasis(let xs, let span):
+                let mapped = expandInlineMacros(xs, env: env, macros: macros, warnings: &warnings, macroStack: macroStack)
+                result.append(.emphasis(mapped, span: span))
+            case .mono(let xs, let span):
+                let mapped = expandInlineMacros(xs, env: env, macros: macros, warnings: &warnings, macroStack: macroStack)
+                result.append(.mono(mapped, span: span))
+            case .mark(let xs, let span):
+                let mapped = expandInlineMacros(xs, env: env, macros: macros, warnings: &warnings, macroStack: macroStack)
+                result.append(.mark(mapped, span: span))
+            case .superscript(let xs, let span):
+                let mapped = expandInlineMacros(xs, env: env, macros: macros, warnings: &warnings, macroStack: macroStack)
+                result.append(.superscript(mapped, span: span))
+            case .subscript(let xs, let span):
+                let mapped = expandInlineMacros(xs, env: env, macros: macros, warnings: &warnings, macroStack: macroStack)
+                result.append(.subscript(mapped, span: span))
+            case .link(let target, let text, let span):
+                let mapped = expandInlineMacros(text, env: env, macros: macros, warnings: &warnings, macroStack: macroStack)
+                result.append(.link(target: target, text: mapped, span: span))
+            case .xref(let target, let text, let span):
+                let mapped = expandInlineMacros(text, env: env, macros: macros, warnings: &warnings, macroStack: macroStack)
+                result.append(.xref(target: target, text: mapped, span: span))
+            case .footnote(let content, let ref, let id, let span):
+                let mapped = expandInlineMacros(content, env: env, macros: macros, warnings: &warnings, macroStack: macroStack)
+                result.append(.footnote(content: mapped, ref: ref, id: id, span: span))
+            case .inlineMacro(let name, let target, let body, let span):
+                if let definition = macros[name] {
+                    if definition.kind == .inline {
+                        if macroStack.contains(definition.name) {
+                            warnings.append(
+                                AdocWarning(
+                                    message: "macro recursion detected: \(definition.name)",
+                                    span: span
+                                )
+                            )
+                            result.append(inline)
+                            continue
+                        }
+                        let args = parseMacroAttributeList(body)
+                        let paramLocals = bindMacroParams(
+                            definition: definition,
+                            args: args,
+                            warnings: &warnings,
+                            span: span
+                        )
+                        var macroEnv = env
+                        for (key, value) in paramLocals {
+                            if case .string(let str) = value {
+                                macroEnv.applyAttributeSet(name: key, value: str)
+                            }
+                        }
+                        let expandedBlocks = definition.body.map { $0.applyingAttributes(using: macroEnv) }
+                        let expandedInlines: [AdocInline]
+                        if expandedBlocks.count == 1, case .paragraph(let para) = expandedBlocks[0] {
+                            expandedInlines = para.text.inlines
+                        } else {
+                            warnings.append(
+                                AdocWarning(
+                                    message: "inline macro body must be a single paragraph: \(definition.name)",
+                                    span: span
+                                )
+                            )
+                            let text = expandedBlocks.map { $0.renderAsAsciiDoc() }.joined()
+                            expandedInlines = parseInlines(text, baseSpan: span)
+                        }
+                        let mapped = expandInlineMacros(
+                            expandedInlines,
+                            env: macroEnv,
+                            macros: macros,
+                            warnings: &warnings,
+                            macroStack: macroStack + [definition.name]
+                        )
+                        result.append(contentsOf: mapped)
+                    } else {
+                        warnings.append(
+                            AdocWarning(
+                                message: "block macro used in inline context: \(name)",
+                                span: span
+                            )
+                        )
+                        result.append(inline)
+                    }
+                } else {
+                    result.append(inline)
+                }
+            default:
+                result.append(inline)
+            }
         }
 
         return result
@@ -113,35 +549,37 @@ private extension XADProcessor {
         _ block: AdocBlock,
         env: inout AttrEnv,
         warnings: inout [AdocWarning],
-        locals: [String: XADAttributeValue]
+        locals: [String: XADAttributeValue],
+        macros: [String: MacroDefinition],
+        macroStack: [String]
     ) -> AdocBlock {
         switch block {
         case .section(var section):
-            section.title = expandText(section.title, env: env, locals: locals)
-            section.blocks = processBlocks(section.blocks, env: &env, warnings: &warnings, locals: locals)
+            section.title = expandText(section.title, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack)
+            section.blocks = processBlocks(section.blocks, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
             return .section(section)
 
         case .paragraph(var para):
-            para.text = expandText(para.text, env: env, locals: locals)
+            para.text = expandText(para.text, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack)
             return .paragraph(para)
 
         case .listing(var listing):
-            listing.text = expandText(listing.text, env: env, locals: locals)
+            listing.text = expandText(listing.text, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack)
             return .listing(listing)
 
         case .literalBlock(var literal):
-            literal.text = expandText(literal.text, env: env, locals: locals)
+            literal.text = expandText(literal.text, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack)
             return .literalBlock(literal)
 
         case .discreteHeading(var heading):
-            heading.title = expandText(heading.title, env: env, locals: locals)
+            heading.title = expandText(heading.title, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack)
             return .discreteHeading(heading)
 
         case .list(var list):
             list.items = list.items.map { item in
                 var copy = item
-                copy.principal = expandText(item.principal, env: env, locals: locals)
-                copy.blocks = processBlocks(item.blocks, env: &env, warnings: &warnings, locals: locals)
+                copy.principal = expandText(item.principal, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack)
+                copy.blocks = processBlocks(item.blocks, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
                 return copy
             }
             return .list(list)
@@ -149,50 +587,50 @@ private extension XADProcessor {
         case .dlist(var dlist):
             dlist.items = dlist.items.map { item in
                 var copy = item
-                copy.term = expandText(item.term, env: env, locals: locals)
+                copy.term = expandText(item.term, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack)
                 if let principal = item.principal {
-                    copy.principal = expandText(principal, env: env, locals: locals)
+                    copy.principal = expandText(principal, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack)
                 }
-                copy.blocks = processBlocks(item.blocks, env: &env, warnings: &warnings, locals: locals)
+                copy.blocks = processBlocks(item.blocks, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
                 return copy
             }
             return .dlist(dlist)
 
         case .sidebar(var sidebar):
-            sidebar.title = sidebar.title.map { expandText($0, env: env, locals: locals) }
-            sidebar.blocks = processBlocks(sidebar.blocks, env: &env, warnings: &warnings, locals: locals)
+            sidebar.title = sidebar.title.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
+            sidebar.blocks = processBlocks(sidebar.blocks, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
             return .sidebar(sidebar)
 
         case .example(var example):
-            example.title = example.title.map { expandText($0, env: env, locals: locals) }
-            example.blocks = processBlocks(example.blocks, env: &env, warnings: &warnings, locals: locals)
+            example.title = example.title.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
+            example.blocks = processBlocks(example.blocks, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
             return .example(example)
 
         case .quote(var quote):
-            quote.title = quote.title.map { expandText($0, env: env, locals: locals) }
-            quote.attribution = quote.attribution.map { expandText($0, env: env, locals: locals) }
-            quote.citetitle = quote.citetitle.map { expandText($0, env: env, locals: locals) }
-            quote.blocks = processBlocks(quote.blocks, env: &env, warnings: &warnings, locals: locals)
+            quote.title = quote.title.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
+            quote.attribution = quote.attribution.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
+            quote.citetitle = quote.citetitle.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
+            quote.blocks = processBlocks(quote.blocks, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
             return .quote(quote)
 
         case .open(var open):
-            open.title = open.title.map { expandText($0, env: env, locals: locals) }
-            open.blocks = processBlocks(open.blocks, env: &env, warnings: &warnings, locals: locals)
+            open.title = open.title.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
+            open.blocks = processBlocks(open.blocks, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
             return .open(open)
 
         case .admonition(var admonition):
-            admonition.title = admonition.title.map { expandText($0, env: env, locals: locals) }
-            admonition.blocks = processBlocks(admonition.blocks, env: &env, warnings: &warnings, locals: locals)
+            admonition.title = admonition.title.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
+            admonition.blocks = processBlocks(admonition.blocks, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
             return .admonition(admonition)
 
         case .verse(var verse):
-            verse.title = verse.title.map { expandText($0, env: env, locals: locals) }
-            verse.attribution = verse.attribution.map { expandText($0, env: env, locals: locals) }
-            verse.citetitle = verse.citetitle.map { expandText($0, env: env, locals: locals) }
+            verse.title = verse.title.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
+            verse.attribution = verse.attribution.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
+            verse.citetitle = verse.citetitle.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
             if let text = verse.text {
-                verse.text = expandText(text, env: env, locals: locals)
+                verse.text = expandText(text, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack)
             }
-            verse.blocks = processBlocks(verse.blocks, env: &env, warnings: &warnings, locals: locals)
+            verse.blocks = processBlocks(verse.blocks, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
             return .verse(verse)
 
         default:
@@ -205,7 +643,9 @@ private extension XADProcessor {
         blocks: [AdocBlock],
         env: inout AttrEnv,
         warnings: inout [AdocWarning],
-        locals: [String: XADAttributeValue]
+        locals: [String: XADAttributeValue],
+        macros: [String: MacroDefinition],
+        macroStack: [String]
     ) -> (Int, [AdocBlock]) {
         guard case .blockMacro(let ifMacro) = blocks[startIndex] else {
             return (startIndex, [])
@@ -295,9 +735,35 @@ private extension XADProcessor {
         var selected: [AdocBlock] = []
         for branch in branches {
             if let cond = branch.cond {
-                if evaluateCondition(cond, env: env, locals: locals) {
-                    selected = branch.blocks
-                    break
+                let (ok, unresolved, exprWarnings) = evaluateCondition(cond, env: env, locals: locals)
+                for message in exprWarnings {
+                    warnings.append(
+                        AdocWarning(
+                            message: message,
+                            span: ifMacro.span
+                        )
+                    )
+                }
+                if !unresolved.isEmpty {
+                    warnings.append(
+                        AdocWarning(
+                            message: "unknown variable in if expression: \(unresolved.joined(separator: ", "))",
+                            span: ifMacro.span
+                        )
+                    )
+                }
+                if let ok {
+                    if ok {
+                        selected = branch.blocks
+                        break
+                    }
+                } else {
+                    warnings.append(
+                        AdocWarning(
+                            message: "invalid if expression: \(cond)",
+                            span: ifMacro.span
+                        )
+                    )
                 }
             } else {
                 selected = branch.blocks
@@ -305,7 +771,7 @@ private extension XADProcessor {
             }
         }
 
-        let processed = processBlocks(selected, env: &env, warnings: &warnings, locals: locals)
+        let processed = processBlocks(selected, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
         return (currentIndex, processed)
     }
 
@@ -314,7 +780,9 @@ private extension XADProcessor {
         blocks: [AdocBlock],
         env: inout AttrEnv,
         warnings: inout [AdocWarning],
-        locals: [String: XADAttributeValue]
+        locals: [String: XADAttributeValue],
+        macros: [String: MacroDefinition],
+        macroStack: [String]
     ) -> (Int, [AdocBlock]) {
         guard case .blockMacro(let forMacro) = blocks[startIndex] else {
             return (startIndex, [])
@@ -381,10 +849,27 @@ private extension XADProcessor {
         let keyName = forMacro.attributes["key"]
         let valueName = forMacro.attributes["value"]
 
-        guard let collection = evaluateValue(inExpr, env: env, locals: locals) else {
+        let (collection, unresolved, exprWarnings) = evaluateValue(inExpr, env: env, locals: locals)
+        for message in exprWarnings {
             warnings.append(
                 AdocWarning(
-                    message: "for directive could not resolve in expression",
+                    message: message,
+                    span: forMacro.span
+                )
+            )
+        }
+        if !unresolved.isEmpty {
+            warnings.append(
+                AdocWarning(
+                    message: "unknown variable in for expression: \(unresolved.joined(separator: ", "))",
+                    span: forMacro.span
+                )
+            )
+        }
+        guard let collection else {
+            warnings.append(
+                AdocWarning(
+                    message: "invalid for in expression: \(inExpr)",
                     span: forMacro.span
                 )
             )
@@ -403,11 +888,19 @@ private extension XADProcessor {
                 )
                 return (currentIndex, [])
             }
+            if keyName != nil || valueName != nil {
+                warnings.append(
+                    AdocWarning(
+                        message: "for array iteration does not use key/value",
+                        span: forMacro.span
+                    )
+                )
+            }
             for (idx, value) in items.enumerated() {
                 var loopLocals = locals
                 loopLocals[indexName] = .number(Double(idx))
                 loopLocals[itemName] = value
-                let processed = processBlocks(body, env: &env, warnings: &warnings, locals: loopLocals)
+                let processed = processBlocks(body, env: &env, warnings: &warnings, locals: loopLocals, macros: macros, macroStack: macroStack)
                 expanded.append(contentsOf: processed)
             }
 
@@ -421,11 +914,19 @@ private extension XADProcessor {
                 )
                 return (currentIndex, [])
             }
+            if indexName != nil || itemName != nil {
+                warnings.append(
+                    AdocWarning(
+                        message: "for dictionary iteration does not use index/item",
+                        span: forMacro.span
+                    )
+                )
+            }
             for (key, value) in dict {
                 var loopLocals = locals
                 loopLocals[keyName] = .string(key)
                 loopLocals[valueName] = value
-                let processed = processBlocks(body, env: &env, warnings: &warnings, locals: loopLocals)
+                let processed = processBlocks(body, env: &env, warnings: &warnings, locals: loopLocals, macros: macros, macroStack: macroStack)
                 expanded.append(contentsOf: processed)
             }
 
@@ -465,27 +966,79 @@ private extension XADProcessor {
         case variable(String)
     }
 
-    func evaluateCondition(_ expr: String, env: AttrEnv, locals: [String: XADAttributeValue]) -> Bool {
-        guard let value = evaluateExpression(expr, env: env, locals: locals) else { return false }
-        return isTruthy(value)
+    func evaluateCondition(
+        _ expr: String,
+        env: AttrEnv,
+        locals: [String: XADAttributeValue]
+    ) -> (Bool?, [String], [String]) {
+        var unresolved: [String] = []
+        var warnings: [String] = []
+        guard let value = evaluateExpression(
+            expr,
+            env: env,
+            locals: locals,
+            unresolved: &unresolved,
+            warnings: &warnings
+        ) else {
+            return (nil, unresolved, warnings)
+        }
+        return (isTruthy(value), unresolved, warnings)
     }
 
-    func evaluateValue(_ expr: String, env: AttrEnv, locals: [String: XADAttributeValue]) -> XADAttributeValue? {
+    func evaluateValue(
+        _ expr: String,
+        env: AttrEnv,
+        locals: [String: XADAttributeValue]
+    ) -> (XADAttributeValue?, [String], [String]) {
         let trimmed = expr.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") {
             if let parsed = XADAttributeValue.parse(from: trimmed, xadOptions: env.xadOptions) {
-                return parsed
+                return (parsed, [], [])
             }
         }
-        return evaluateExpression(expr, env: env, locals: locals)
+        var unresolved: [String] = []
+        var warnings: [String] = []
+        let value = evaluateExpression(
+            expr,
+            env: env,
+            locals: locals,
+            unresolved: &unresolved,
+            warnings: &warnings
+        )
+        return (value, unresolved, warnings)
     }
 
-    func evaluateExpression(_ expr: String, env: AttrEnv, locals: [String: XADAttributeValue]) -> XADAttributeValue? {
+    func evaluateExpression(
+        _ expr: String,
+        env: AttrEnv,
+        locals: [String: XADAttributeValue],
+        unresolved: inout [String],
+        warnings: inout [String]
+    ) -> XADAttributeValue? {
         guard let tokens = tokenize(expr) else { return nil }
-        var parser = ExprParser(tokens: tokens) { name in
-            resolveValue(name, env: env, locals: locals)
+        var localUnresolved: [String] = []
+        var localWarnings: [String] = []
+        var parser = ExprParser(tokens: tokens, warningSink: { message in
+            if !localWarnings.contains(message) {
+                localWarnings.append(message)
+            }
+        }) { name in
+            if let resolved = resolveValue(name, env: env, locals: locals) {
+                return resolved
+            }
+            if !localUnresolved.contains(name) {
+                localUnresolved.append(name)
+            }
+            return .null
         }
-        return parser.parseExpression()
+        let value = parser.parseExpression()
+        for name in localUnresolved where !unresolved.contains(name) {
+            unresolved.append(name)
+        }
+        for message in localWarnings where !warnings.contains(message) {
+            warnings.append(message)
+        }
+        return value
     }
 
     func tokenize(_ expr: String) -> [ExprToken]? {
@@ -646,13 +1199,33 @@ private extension XADProcessor {
         }
     }
 
-    func expandText(_ text: AdocText, env: AttrEnv, locals: [String: XADAttributeValue]) -> AdocText {
-        let expanded = expandString(text.plain, env: env, locals: locals)
-        return AdocText(plain: expanded, span: text.span)
+    func expandText(
+        _ text: AdocText,
+        env: AttrEnv,
+        locals: [String: XADAttributeValue],
+        macros: [String: MacroDefinition],
+        warnings: inout [AdocWarning],
+        macroStack: [String]
+    ) -> AdocText {
+        let localEnv = localEnvWithLocals(env, locals: locals)
+        let attributedInlines = text.inlines.map { $0.applyingAttributes(using: localEnv) }
+        let expandedInlines = expandInlineMacros(
+            attributedInlines,
+            env: localEnv,
+            macros: macros,
+            warnings: &warnings,
+            macroStack: macroStack
+        )
+        return AdocText(inlines: expandedInlines, span: text.span)
     }
 
     func expandString(_ value: String, env: AttrEnv, locals: [String: XADAttributeValue]) -> String {
-        guard !locals.isEmpty else { return env.expand(value) }
+        let localEnv = localEnvWithLocals(env, locals: locals)
+        return localEnv.expand(value)
+    }
+
+    func localEnvWithLocals(_ env: AttrEnv, locals: [String: XADAttributeValue]) -> AttrEnv {
+        guard !locals.isEmpty else { return env }
         var localEnv = env
         for (key, val) in locals {
             switch val {
@@ -668,7 +1241,7 @@ private extension XADProcessor {
                 localEnv.applyAttributeSet(name: key, value: jsonString(from: val))
             }
         }
-        return localEnv.expand(value)
+        return localEnv
     }
 
     func formatNumber(_ value: Double) -> String {
@@ -694,10 +1267,16 @@ private extension XADProcessor {
 private struct ExprParser {
     private var tokens: [XADProcessor.ExprToken]
     private var index: Int = 0
+    private let warningSink: (String) -> Void
     private let resolver: (String) -> XADAttributeValue?
 
-    init(tokens: [XADProcessor.ExprToken], resolver: @escaping (String) -> XADAttributeValue?) {
+    init(
+        tokens: [XADProcessor.ExprToken],
+        warningSink: @escaping (String) -> Void,
+        resolver: @escaping (String) -> XADAttributeValue?
+    ) {
         self.tokens = tokens
+        self.warningSink = warningSink
         self.resolver = resolver
     }
 
@@ -813,6 +1392,9 @@ private struct ExprParser {
         case (.null, .null):
             return op == "=="
         default:
+            if lhs.typeName != rhs.typeName {
+                warningSink("type mismatch in comparison: \(lhs.typeName) vs \(rhs.typeName)")
+            }
             let l = stringify(lhs)
             let r = stringify(rhs)
             if op == "==" { return l == r }
@@ -878,3 +1460,16 @@ private struct ExprParser {
         }
     }
 }
+private extension XADAttributeValue {
+    var typeName: String {
+        switch self {
+        case .number: return "number"
+        case .string: return "string"
+        case .bool: return "bool"
+        case .null: return "null"
+        case .array: return "array"
+        case .dictionary: return "dictionary"
+        }
+    }
+}
+
