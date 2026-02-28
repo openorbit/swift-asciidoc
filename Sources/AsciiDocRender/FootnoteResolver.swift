@@ -37,6 +37,7 @@ public final class FootnoteResolver {
             typedAttributes: document.typedAttributes,
             header: document.header,
             blocks: newBlocks,
+            warnings: document.warnings,
             span: document.span,
             xadOptions: document.xadOptions
         )

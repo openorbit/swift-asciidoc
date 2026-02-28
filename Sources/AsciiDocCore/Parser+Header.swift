@@ -264,69 +264,6 @@ private func consumeAttributeContinuation(
     return result
 }
 
-private func normalizeXADAttributeValue(_ value: String, xadOptions: XADOptions) -> String {
-    guard xadOptions.enabled else { return value }
-    var index = value.startIndex
-    while index < value.endIndex, value[index].isWhitespace {
-        index = value.index(after: index)
-    }
-    guard index < value.endIndex, value[index] == "\\" else { return value }
-    let nextIndex = value.index(after: index)
-    guard nextIndex < value.endIndex else { return value }
-    let nextChar = value[nextIndex]
-    guard nextChar == "{" || nextChar == "[" else { return value }
-    var result = value
-    result.remove(at: index)
-    return result
-}
-
-private func consumesMultilineJSON(_ value: String, xadOptions: XADOptions) -> Bool {
-    guard xadOptions.enabled else { return false }
-    var index = value.startIndex
-    while index < value.endIndex, value[index].isWhitespace {
-        index = value.index(after: index)
-    }
-    guard index < value.endIndex else { return false }
-    let lead = value[index]
-    guard lead == "{" || lead == "[" else { return false }
-    return !isJSONBalanced(value)
-}
-
-private func isJSONBalanced(_ value: String) -> Bool {
-    var braceDepth = 0
-    var bracketDepth = 0
-    var inString = false
-    var escapeNext = false
-
-    for ch in value {
-        if inString {
-            if escapeNext {
-                escapeNext = false
-                continue
-            }
-            if ch == "\\" {
-                escapeNext = true
-                continue
-            }
-            if ch == "\"" {
-                inString = false
-            }
-            continue
-        }
-
-        if ch == "\"" {
-            inString = true
-            continue
-        }
-        if ch == "{" { braceDepth += 1 }
-        else if ch == "}" { braceDepth -= 1 }
-        else if ch == "[" { bracketDepth += 1 }
-        else if ch == "]" { bracketDepth -= 1 }
-    }
-
-    return braceDepth <= 0 && bracketDepth <= 0 && !inString
-}
-
 private func consumeAttributeMultilineJSON(
     initial: String,
     it: inout TokenIter,

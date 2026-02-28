@@ -97,6 +97,7 @@ extension AdocParser {
         for marker: String,
         it: inout TokenIter,
         env: inout AttrEnv,
+        warnings: inout [AdocWarning],
         stack: inout [String]
     ) -> AdocDList? {
         stack.append(marker)
@@ -139,7 +140,7 @@ extension AdocParser {
 
                 // New marker not in any outer level → nested dlist under last item
                 if var lastItem = items.popLast() {
-                    if let nested = parseDList(for: thisMarker, it: &it, env: &env, stack: &stack) {
+                    if let nested = parseDList(for: thisMarker, it: &it, env: &env, warnings: &warnings, stack: &stack) {
                         lastItem.blocks.append(.dlist(nested))
                     }
                     items.append(lastItem)
@@ -167,12 +168,12 @@ extension AdocParser {
                         let line       = nextTok.string
                         let thisMarker = String(line[sepRange])
 
-                        if let nested = parseDList(for: thisMarker, it: &it, env: &env, stack: &stack) {
+                        if let nested = parseDList(for: thisMarker, it: &it, env: &env, warnings: &warnings, stack: &stack) {
                             lastItem.blocks.append(.dlist(nested))
                         }
 
                     default:
-                        if let nestedBlock = parseBlock(it: &it, env: &env) {
+                        if let nestedBlock = parseBlock(it: &it, env: &env, warnings: &warnings) {
                             lastItem.blocks.append(nestedBlock)
                         }
                     }

@@ -395,13 +395,22 @@ public struct AdocHeader: Sendable, Equatable {
 
 }
 
+public struct AdocWarning: Sendable, Equatable {
+    public var message: String
+    public var span: AdocRange?
 
+    public init(message: String, span: AdocRange? = nil) {
+        self.message = message
+        self.span = span
+    }
+}
 
 public struct AdocDocument: Sendable, Equatable {
     public var attributes: [String: String?] = [:]
     public var typedAttributes: [String: XADAttributeValue] = [:]
     public var header: AdocHeader? = nil
     public var blocks: [AdocBlock] = []
+    public var warnings: [AdocWarning] = []
     public var span: AdocRange?
     public var xadOptions: XADOptions = .init()
 
@@ -410,6 +419,7 @@ public struct AdocDocument: Sendable, Equatable {
         typedAttributes: [String: XADAttributeValue] = [:],
         header: AdocHeader? = nil,
         blocks: [AdocBlock] = [],
+        warnings: [AdocWarning] = [],
         span: AdocRange? = nil,
         xadOptions: XADOptions = .init()
     ) {
@@ -417,6 +427,7 @@ public struct AdocDocument: Sendable, Equatable {
         self.typedAttributes = typedAttributes
         self.header = header
         self.blocks = blocks
+        self.warnings = warnings
         self.span = span
         self.xadOptions = xadOptions
     }
@@ -425,6 +436,7 @@ public struct AdocDocument: Sendable, Equatable {
         attributes: [String: String?] = [:],
         header: AdocHeader? = nil,
         blocks: [AdocBlock] = [],
+        warnings: [AdocWarning] = [],
         span: AdocRange? = nil,
         xadOptions: XADOptions = .init()
     ) {
@@ -433,6 +445,7 @@ public struct AdocDocument: Sendable, Equatable {
             typedAttributes: [:],
             header: header,
             blocks: blocks,
+            warnings: warnings,
             span: span,
             xadOptions: xadOptions
         )

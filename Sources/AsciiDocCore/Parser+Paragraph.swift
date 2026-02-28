@@ -10,9 +10,9 @@ extension AdocParser {
     ) -> AdocParagraph? {
         guard let first = it.peek() else { return nil }
 
-        // Paragraphs start only on plain text / directive lines.
+        // Paragraphs start only on plain text lines.
         switch first.kind {
-        case .text, .directive:
+        case .text:
             break
         default:
             return nil
@@ -23,7 +23,7 @@ extension AdocParser {
 
         while let t = it.peek() {
             switch t.kind {
-            case .text, .directive:
+            case .text:
                 lines.append(it.contentText(of: t))
                 lastTok = t
                 it.consume()

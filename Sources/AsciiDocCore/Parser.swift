@@ -255,6 +255,7 @@ public struct AdocParser: Sendable {
             }
         }
         var env = AttrEnv(initial: docAttrs, typedAttributes: typedAttrs, xadOptions: xadOptions)
+        var warnings: [AdocWarning] = []
 
         // Header detection (keep your existing logic)
         detectHeader(
@@ -271,7 +272,7 @@ public struct AdocParser: Sendable {
         typedAttrs = env.typedValues
 
         // Body blocks via parseBlocks
-        let bodyBlocks = parseBlocks(it: &it, env: &env) { _ in false }
+        let bodyBlocks = parseBlocks(it: &it, env: &env, warnings: &warnings) { _ in false }
         docAttrs = env.values
         typedAttrs = env.typedValues
 
@@ -281,7 +282,7 @@ public struct AdocParser: Sendable {
             return AdocRange(start: first.range.start, end: last.range.end)
         }()
 
-        return AdocDocument(attributes: docAttrs, typedAttributes: typedAttrs, header: header, blocks: bodyBlocks, span: docSpan, xadOptions: xadOptions)
+        return AdocDocument(attributes: docAttrs, typedAttributes: typedAttrs, header: header, blocks: bodyBlocks, warnings: warnings, span: docSpan, xadOptions: xadOptions)
     }
 
 

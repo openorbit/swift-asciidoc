@@ -92,7 +92,13 @@ package struct AttrEnv {
     // name → optional value (nil means unset)
     private(set) var values: [String: String?]
     private(set) var typedValues: [String: XADAttributeValue]
+    private var scopeStack: [ScopeSnapshot]
     let xadOptions: XADOptions
+
+    private struct ScopeSnapshot {
+        let values: [String: String?]
+        let typedValues: [String: XADAttributeValue]
+    }
 
     package init(
         initial: [String: String?] = [:],
@@ -101,11 +107,25 @@ package struct AttrEnv {
     ) {
         self.values = initial
         self.typedValues = typedAttributes
+        self.scopeStack = []
         self.xadOptions = xadOptions
     }
 
     mutating func set(_ name: String, to value: String?) {
         values[name] = value
+    }
+
+    mutating func pushScope() {
+        let snapshot = ScopeSnapshot(values: values, typedValues: typedValues)
+        scopeStack.append(snapshot)
+    }
+
+    @discardableResult
+    mutating func popScope() -> Bool {
+        guard let snapshot = scopeStack.popLast() else { return false }
+        values = snapshot.values
+        typedValues = snapshot.typedValues
+        return true
     }
 
     mutating func applyAttributeSet(name: String, value: String?) {

@@ -5,7 +5,7 @@
 
 extension AdocParser {
     // Quote (____) parsing with attribution
-    func parseQuote(it: inout TokenIter, env: inout AttrEnv) -> AdocQuote? {
+    func parseQuote(it: inout TokenIter, env: inout AttrEnv, warnings: inout [AdocWarning]) -> AdocQuote? {
         guard let open = it.peek(),
               case .blockFence(let kind, let fenceLen) = open.kind,
               kind == .quote
@@ -28,7 +28,7 @@ extension AdocParser {
                 it.consume()
 
             default:
-                if let b = parseBlock(it: &it, env: &env) {
+                if let b = parseBlock(it: &it, env: &env, warnings: &warnings) {
                     blocks.append(b)
                 } else {
                     it.consume()

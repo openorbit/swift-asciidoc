@@ -232,6 +232,7 @@ extension AdocParser {
         listKind: AdocListKind,
         it: inout TokenIter,
         env: inout AttrEnv,
+        warnings: inout [AdocWarning],
         stack: inout [ListMarkerKey],
         bibliographyStyle: Bool = false
     ) -> AdocList? {
@@ -284,6 +285,7 @@ extension AdocParser {
                         listKind: inferredListKind(from: key),
                         it: &it,
                         env: &env,
+                        warnings: &warnings,
                         stack: &stack,
                         bibliographyStyle: false
                     ) {
@@ -319,6 +321,7 @@ extension AdocParser {
                                 listKind: inferredListKind(from: key),
                                 it: &it,
                                 env: &env,
+                                warnings: &warnings,
                                 stack: &stack,
                                 bibliographyStyle: false
                             ) {
@@ -326,13 +329,13 @@ extension AdocParser {
                             }
                         } else {
                             // Invalid list marker; fall back to generic block parsing
-                            if let block = parseBlock(it: &it, env: &env) {
+                            if let block = parseBlock(it: &it, env: &env, warnings: &warnings) {
                                 lastItem.blocks.append(block)
                             }
                         }
 
                     default:
-                        if let block = parseBlock(it: &it, env: &env) {
+                        if let block = parseBlock(it: &it, env: &env, warnings: &warnings) {
                             lastItem.blocks.append(block)
                         }
                     }
