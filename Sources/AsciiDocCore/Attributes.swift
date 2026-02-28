@@ -54,12 +54,15 @@ public enum XADAttributeValue: Sendable, Equatable {
             return .array(mapped)
         case let str as String:
             return .string(str)
-        case let num as NSNumber:
-            if CFGetTypeID(num) == CFBooleanGetTypeID() {
-                return .bool(num.boolValue)
-            }
-            return .number(num.doubleValue)
-        case _ as NSNull:
+        case let bool as Bool:
+            return .bool(bool)
+        case let int as Int:
+            return .number(Double(int))
+        case let double as Double:
+            return .number(double)
+        case let float as Float:
+            return .number(Double(float))
+        case is NSNull:
             return .null
         default:
             return nil
