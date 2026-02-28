@@ -752,7 +752,8 @@ private func renderDocument(
         extensionHost: &extensionHost,
         attributes: baseAttributes,
         documentDirectory: documentDirectory,
-        enabledExtensions: enabledExtensions
+        enabledExtensions: enabledExtensions,
+        xadOptions: xadOptions
     )
 
     let (preprocessedSource, updatedAttributes) = extensionHost.runWillParse(
@@ -829,7 +830,8 @@ private func registerExtensions(
     extensionHost: inout ExtensionHost,
     attributes: [String: String],
     documentDirectory: URL?,
-    enabledExtensions: [String]
+    enabledExtensions: [String],
+    xadOptions: XADOptions
 ) {
     if let plantumlExtension = makePlantumlExtension(
         attributes: attributes,
@@ -841,6 +843,10 @@ private func registerExtensions(
 
     if let latexExtension = makeLatexExtension(enabledExtensions: enabledExtensions) {
         extensionHost.register(latexExtension)
+    }
+
+    if xadOptions.enabled {
+        extensionHost.register(XADExtension())
     }
 }
 
