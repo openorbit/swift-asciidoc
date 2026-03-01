@@ -85,4 +85,38 @@ struct XADMacroTests {
         #expect(paras.contains("Note: This is body paragraph"))
         #expect(paras.filter { $0 == "This is body paragraph" }.isEmpty)
     }
+
+    @Test
+    func macroEffectsWarning() {
+        let src = """
+        macro::setter[]
+        docset::[name="doc.status", value="draft"]
+        endmacro::setter[]
+
+        setter::[]
+        """
+
+        let parser = AdocParser()
+        let doc = parser.parse(text: src, xadOptions: XADOptions(enabled: true))
+        let processed = XADProcessor().apply(document: doc)
+        let messages = processed.warnings.map { $0.message }
+        #expect(messages.contains { $0.contains("macro uses effects not declared") })
+    }
+
+    @Test
+    func macroEffectsAllowed() {
+        let src = """
+        macro::setter[effects="docset"]
+        docset::[name="doc.status", value="draft"]
+        endmacro::setter[]
+
+        setter::[]
+        """
+
+        let parser = AdocParser()
+        let doc = parser.parse(text: src, xadOptions: XADOptions(enabled: true))
+        let processed = XADProcessor().apply(document: doc)
+        let messages = processed.warnings.map { $0.message }
+        #expect(messages.filter { $0.contains("macro uses effects not declared") }.isEmpty)
+    }
 }

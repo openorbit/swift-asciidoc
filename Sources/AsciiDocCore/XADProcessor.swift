@@ -11,6 +11,17 @@ private enum MacroKind {
     case inline
 }
 
+private let knownMacroEffects: Set<String> = ["docpush", "docset", "docput"]
+
+private struct MacroEffects {
+    let allowsAll: Bool
+    let allowed: Set<String>
+
+    func allows(_ effect: String) -> Bool {
+        allowsAll || allowed.contains(effect)
+    }
+}
+
 private struct MacroParam {
     let name: String
     let defaultValue: String?
@@ -20,6 +31,8 @@ private struct MacroDefinition {
     let name: String
     let kind: MacroKind
     let params: [MacroParam]
+    let effects: MacroEffects
+    let usedEffects: Set<String>
     let body: [AdocBlock]
     let span: AdocRange?
 }
@@ -71,6 +84,15 @@ private extension XADProcessor {
             let block = blocks[index]
             if case .blockMacro(let macro) = block {
                 let name = macro.name
+                if let handled = handleDocMutation(
+                    macro: macro,
+                    env: &env,
+                    warnings: &warnings,
+                    locals: locals
+                ), handled {
+                    index += 1
+                    continue
+                }
                 if let definition = macros[name] {
                     switch definition.kind {
                     case .block:
@@ -222,13 +244,17 @@ private extension XADProcessor {
 
                 let kind = parseMacroKind(macro.attributes["kind"])
                 let params = parseMacroParams(macro.attributes["params"])
+                let effects = parseMacroEffects(macro.attributes["effects"], warnings: &warnings, span: macro.span)
                 let (nestedDefs, strippedBody) = collectMacroDefinitions(from: body, warnings: &warnings)
                 for (nestedName, def) in nestedDefs { definitions[nestedName] = def }
+                let usedEffects = collectMacroEffects(from: strippedBody)
 
                 let definition = MacroDefinition(
                     name: name,
                     kind: kind,
                     params: params,
+                    effects: effects,
+                    usedEffects: usedEffects,
                     body: strippedBody,
                     span: macro.span
                 )
@@ -346,6 +372,76 @@ private extension XADProcessor {
         return params
     }
 
+    func parseMacroEffects(
+        _ raw: String?,
+        warnings: inout [AdocWarning],
+        span: AdocRange?
+    ) -> MacroEffects {
+        guard let raw, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return MacroEffects(allowsAll: false, allowed: [])
+        }
+        let tokens = raw.split { $0 == "," || $0.isWhitespace }
+        var allowsAll = false
+        var allowed: Set<String> = []
+        for token in tokens {
+            let effect = token.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !effect.isEmpty else { continue }
+            if effect == "all" {
+                allowsAll = true
+                continue
+            }
+            if knownMacroEffects.contains(effect) {
+                allowed.insert(effect)
+            } else {
+                warnings.append(
+                    AdocWarning(
+                        message: "unknown macro effect: \(effect)",
+                        span: span
+                    )
+                )
+            }
+        }
+        return MacroEffects(allowsAll: allowsAll, allowed: allowed)
+    }
+
+    func collectMacroEffects(from blocks: [AdocBlock]) -> Set<String> {
+        var effects: Set<String> = []
+        for block in blocks {
+            switch block {
+            case .blockMacro(let macro):
+                let name = macro.name.lowercased()
+                if knownMacroEffects.contains(name) {
+                    effects.insert(name)
+                }
+            case .section(let section):
+                effects.formUnion(collectMacroEffects(from: section.blocks))
+            case .list(let list):
+                for item in list.items {
+                    effects.formUnion(collectMacroEffects(from: item.blocks))
+                }
+            case .dlist(let dlist):
+                for item in dlist.items {
+                    effects.formUnion(collectMacroEffects(from: item.blocks))
+                }
+            case .sidebar(let sidebar):
+                effects.formUnion(collectMacroEffects(from: sidebar.blocks))
+            case .example(let example):
+                effects.formUnion(collectMacroEffects(from: example.blocks))
+            case .quote(let quote):
+                effects.formUnion(collectMacroEffects(from: quote.blocks))
+            case .open(let open):
+                effects.formUnion(collectMacroEffects(from: open.blocks))
+            case .admonition(let admonition):
+                effects.formUnion(collectMacroEffects(from: admonition.blocks))
+            case .verse(let verse):
+                effects.formUnion(collectMacroEffects(from: verse.blocks))
+            default:
+                continue
+            }
+        }
+        return effects
+    }
+
     func bindMacroParams(
         definition: MacroDefinition,
         args: [String: String],
@@ -445,6 +541,19 @@ private extension XADProcessor {
             return [.blockMacro(macro)]
         }
 
+        if !definition.effects.allowsAll {
+            let missingEffects = definition.usedEffects.subtracting(definition.effects.allowed)
+            if !missingEffects.isEmpty {
+                let ordered = missingEffects.sorted().joined(separator: ", ")
+                warnings.append(
+                    AdocWarning(
+                        message: "macro uses effects not declared: \(ordered)",
+                        span: macro.span
+                    )
+                )
+            }
+        }
+
         let paramLocals = bindMacroParams(
             definition: definition,
             args: macro.attributes,
@@ -478,6 +587,122 @@ private extension XADProcessor {
             macros: macros,
             macroStack: macroStack + [definition.name]
         )
+    }
+
+    func handleDocMutation(
+        macro: AdocBlockMacro,
+        env: inout AttrEnv,
+        warnings: inout [AdocWarning],
+        locals: [String: XADAttributeValue]
+    ) -> Bool? {
+        let lowered = macro.name.lowercased()
+        guard lowered == "docset" || lowered == "docpush" || lowered == "docput" else {
+            return nil
+        }
+        guard let rawName = macro.attributes["name"], !rawName.isEmpty else {
+            warnings.append(
+                AdocWarning(
+                    message: "missing doc variable name",
+                    span: macro.span
+                )
+            )
+            return true
+        }
+        let name = expandString(rawName, env: env, locals: locals)
+        if !name.hasPrefix("doc.") {
+            warnings.append(
+                AdocWarning(
+                    message: "doc variable name should start with doc.: \(name)",
+                    span: macro.span
+                )
+            )
+        }
+
+        func resolveValue() -> XADAttributeValue? {
+            guard let rawValue = macro.attributes["value"] else { return nil }
+            return parseDocValue(rawValue, env: env, locals: locals)
+        }
+
+        switch lowered {
+        case "docset":
+            guard let value = resolveValue() else {
+                warnings.append(
+                    AdocWarning(
+                        message: "docset requires value",
+                        span: macro.span
+                    )
+                )
+                return true
+            }
+            env.applyAttributeSet(name: name, value: attributeString(from: value))
+            return true
+
+        case "docpush":
+            guard let value = resolveValue() else {
+                warnings.append(
+                    AdocWarning(
+                        message: "docpush requires value",
+                        span: macro.span
+                    )
+                )
+                return true
+            }
+            var array: [XADAttributeValue] = []
+            if env.xadOptions.enabled, let current = env.resolveTypedValue(name) {
+                if case .array(let existing) = current {
+                    array = existing
+                } else {
+                    warnings.append(
+                        AdocWarning(
+                            message: "docpush target is not an array: \(name)",
+                            span: macro.span
+                        )
+                    )
+                }
+            }
+            array.append(value)
+            env.applyAttributeSet(name: name, value: attributeString(from: .array(array)))
+            return true
+
+        case "docput":
+            guard let keyRaw = macro.attributes["key"], !keyRaw.isEmpty else {
+                warnings.append(
+                    AdocWarning(
+                        message: "docput requires key",
+                        span: macro.span
+                    )
+                )
+                return true
+            }
+            guard let value = resolveValue() else {
+                warnings.append(
+                    AdocWarning(
+                        message: "docput requires value",
+                        span: macro.span
+                    )
+                )
+                return true
+            }
+            let key = stripSurroundingQuotes(expandString(keyRaw, env: env, locals: locals))
+            var dict: [String: XADAttributeValue] = [:]
+            if env.xadOptions.enabled, let current = env.resolveTypedValue(name) {
+                if case .dictionary(let existing) = current {
+                    dict = existing
+                } else {
+                    warnings.append(
+                        AdocWarning(
+                            message: "docput target is not a dictionary: \(name)",
+                            span: macro.span
+                        )
+                    )
+                }
+            }
+            dict[key] = value
+            env.applyAttributeSet(name: name, value: attributeString(from: .dictionary(dict)))
+            return true
+        default:
+            return nil
+        }
     }
 
     func expandInlineMacros(
@@ -519,7 +744,7 @@ private extension XADProcessor {
             case .footnote(let content, let ref, let id, let span):
                 let mapped = expandInlineMacros(content, env: env, macros: macros, warnings: &warnings, macroStack: macroStack)
                 result.append(.footnote(content: mapped, ref: ref, id: id, span: span))
-            case .inlineMacro(let name, let target, let body, let span):
+            case .inlineMacro(let name, _, let body, let span):
                 if let definition = macros[name] {
                     if definition.kind == .inline {
                         if macroStack.contains(definition.name) {
@@ -1264,6 +1489,40 @@ private extension XADProcessor {
     func expandString(_ value: String, env: AttrEnv, locals: [String: XADAttributeValue]) -> String {
         let localEnv = localEnvWithLocals(env, locals: locals)
         return localEnv.expand(value)
+    }
+
+    func parseDocValue(_ rawValue: String, env: AttrEnv, locals: [String: XADAttributeValue]) -> XADAttributeValue {
+        let expanded = expandString(rawValue, env: env, locals: locals)
+        let normalized = stripSurroundingQuotes(expanded)
+        if let typed = XADAttributeValue.parse(from: normalized, xadOptions: env.xadOptions) {
+            return typed
+        }
+        return .string(normalized)
+    }
+
+    func attributeString(from value: XADAttributeValue) -> String {
+        switch value {
+        case .string(let s):
+            return s
+        case .number(let n):
+            return formatNumber(n)
+        case .bool(let b):
+            return b ? "true" : "false"
+        case .null:
+            return "null"
+        case .array, .dictionary:
+            return jsonString(from: value)
+        }
+    }
+
+    func stripSurroundingQuotes(_ value: String) -> String {
+        guard value.count >= 2 else { return value }
+        let first = value.first
+        let last = value.last
+        if (first == "\"" && last == "\"") || (first == "'" && last == "'") {
+            return String(value.dropFirst().dropLast())
+        }
+        return value
     }
 
     func localEnvWithLocals(_ env: AttrEnv, locals: [String: XADAttributeValue]) -> AttrEnv {
