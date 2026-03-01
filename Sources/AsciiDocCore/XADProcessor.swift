@@ -38,7 +38,30 @@ private struct MacroDefinition {
 }
 
 public struct XADProcessor: Sendable {
-    public init() {}
+    public struct Options: Sendable {
+        public var sourceURL: URL?
+        public var includeResolvers: [IncludeResolver]
+        public var safeMode: Preprocessor.SafeMode
+        public var allowURIRead: Bool
+
+        public init(
+            sourceURL: URL? = nil,
+            includeResolvers: [IncludeResolver] = [],
+            safeMode: Preprocessor.SafeMode = .unsafe,
+            allowURIRead: Bool = true
+        ) {
+            self.sourceURL = sourceURL?.standardizedFileURL
+            self.includeResolvers = includeResolvers
+            self.safeMode = safeMode
+            self.allowURIRead = allowURIRead
+        }
+    }
+
+    private let options: Options
+
+    public init(options: Options = .init()) {
+        self.options = options
+    }
 
     public func apply(document: AdocDocument) -> AdocDocument {
         var env = AttrEnv(
@@ -47,7 +70,7 @@ public struct XADProcessor: Sendable {
             xadOptions: document.xadOptions
         )
         var warnings = document.warnings
-        let (macroDefs, strippedBlocks) = collectMacroDefinitions(
+        var (macroDefs, strippedBlocks) = collectMacroDefinitions(
             from: document.blocks,
             warnings: &warnings
         )
@@ -56,8 +79,10 @@ public struct XADProcessor: Sendable {
             env: &env,
             warnings: &warnings,
             locals: [:],
-            macros: macroDefs,
-            macroStack: []
+            macros: &macroDefs,
+            macroStack: [],
+            includeStack: [],
+            sourceURL: options.sourceURL
         )
         var updated = document
         updated.blocks = processed
@@ -74,8 +99,10 @@ private extension XADProcessor {
         env: inout AttrEnv,
         warnings: inout [AdocWarning],
         locals: [String: XADAttributeValue],
-        macros: [String: MacroDefinition],
-        macroStack: [String]
+        macros: inout [String: MacroDefinition],
+        macroStack: [String],
+        includeStack: [String],
+        sourceURL: URL?
     ) -> [AdocBlock] {
         var result: [AdocBlock] = []
         var index = 0
@@ -93,6 +120,25 @@ private extension XADProcessor {
                     index += 1
                     continue
                 }
+                let lowered = name.lowercased()
+                if lowered == "xinclude" {
+                    if let expanded = expandXIncludeBlock(
+                        macro,
+                        env: &env,
+                        warnings: &warnings,
+                        locals: locals,
+                        macros: &macros,
+                        macroStack: macroStack,
+                        includeStack: includeStack,
+                        sourceURL: sourceURL
+                    ) {
+                        result.append(contentsOf: expanded)
+                    } else {
+                        result.append(block)
+                    }
+                    index += 1
+                    continue
+                }
                 if let definition = macros[name] {
                     switch definition.kind {
                     case .block:
@@ -106,8 +152,10 @@ private extension XADProcessor {
                             env: &env,
                             warnings: &warnings,
                             locals: locals,
-                            macros: macros,
+                            macros: &macros,
                             macroStack: macroStack,
+                            includeStack: includeStack,
+                            sourceURL: sourceURL,
                             bodyBlocks: bodyBlocks
                         )
                         result.append(contentsOf: expanded)
@@ -125,7 +173,6 @@ private extension XADProcessor {
                     continue
                 }
 
-                let lowered = name.lowercased()
                 if lowered == "if" {
                     let (endIndex, output) = expandIf(
                         from: index,
@@ -133,8 +180,10 @@ private extension XADProcessor {
                         env: &env,
                         warnings: &warnings,
                         locals: locals,
-                        macros: macros,
-                        macroStack: macroStack
+                        macros: &macros,
+                        macroStack: macroStack,
+                        includeStack: includeStack,
+                        sourceURL: sourceURL
                     )
                     result.append(contentsOf: output)
                     index = endIndex + 1
@@ -147,8 +196,10 @@ private extension XADProcessor {
                         env: &env,
                         warnings: &warnings,
                         locals: locals,
-                        macros: macros,
-                        macroStack: macroStack
+                        macros: &macros,
+                        macroStack: macroStack,
+                        includeStack: includeStack,
+                        sourceURL: sourceURL
                     )
                     result.append(contentsOf: output)
                     index = endIndex + 1
@@ -191,8 +242,10 @@ private extension XADProcessor {
                 env: &env,
                 warnings: &warnings,
                 locals: locals,
-                macros: macros,
-                macroStack: macroStack
+                macros: &macros,
+                macroStack: macroStack,
+                includeStack: includeStack,
+                sourceURL: sourceURL
             )
             result.append(transformed)
             index += 1
@@ -527,8 +580,10 @@ private extension XADProcessor {
         env: inout AttrEnv,
         warnings: inout [AdocWarning],
         locals: [String: XADAttributeValue],
-        macros: [String: MacroDefinition],
+        macros: inout [String: MacroDefinition],
         macroStack: [String],
+        includeStack: [String],
+        sourceURL: URL?,
         bodyBlocks: [AdocBlock]
     ) -> [AdocBlock] {
         if macroStack.contains(definition.name) {
@@ -584,8 +639,10 @@ private extension XADProcessor {
             env: &env,
             warnings: &warnings,
             locals: macroLocals,
-            macros: macros,
-            macroStack: macroStack + [definition.name]
+            macros: &macros,
+            macroStack: macroStack + [definition.name],
+            includeStack: includeStack,
+            sourceURL: sourceURL
         )
     }
 
@@ -705,12 +762,347 @@ private extension XADProcessor {
         }
     }
 
+    func includeBaseDirectory(for sourceURL: URL?) -> URL? {
+        guard let sourceURL else { return nil }
+        if sourceURL.hasDirectoryPath { return sourceURL }
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: sourceURL.path, isDirectory: &isDirectory), isDirectory.boolValue {
+            return sourceURL
+        }
+        return sourceURL.deletingLastPathComponent()
+    }
+
+    func includeResolvers(for sourceURL: URL?) -> [IncludeResolver] {
+        if options.includeResolvers.isEmpty {
+            let resolver = FileSystemIncludeResolver(
+                rootDirectory: includeBaseDirectory(for: sourceURL),
+                allowURIRead: options.allowURIRead,
+                safeMode: options.safeMode
+            )
+            return [resolver]
+        }
+        return options.includeResolvers
+    }
+
+    func resolveIncludeTarget(
+        _ rawTarget: String?,
+        env: AttrEnv,
+        locals: [String: XADAttributeValue],
+        warnings: inout [AdocWarning],
+        span: AdocRange?
+    ) -> String? {
+        guard let rawTarget, !rawTarget.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            warnings.append(
+                AdocWarning(
+                    message: "xinclude missing target",
+                    span: span
+                )
+            )
+            return nil
+        }
+        let expanded = expandString(rawTarget, env: env, locals: locals)
+        let normalized = stripSurroundingQuotes(expanded.trimmingCharacters(in: .whitespacesAndNewlines))
+        if normalized.isEmpty {
+            warnings.append(
+                AdocWarning(
+                    message: "xinclude missing target",
+                    span: span
+                )
+            )
+            return nil
+        }
+        return normalized
+    }
+
+    func resolveIncludeResult(target: String, sourceURL: URL?) -> IncludeResult? {
+        let sourceDirectory = includeBaseDirectory(for: sourceURL)
+        for resolver in includeResolvers(for: sourceURL) {
+            if let result = resolver.resolve(target: target, from: sourceDirectory) {
+                return result
+            }
+        }
+        guard options.safeMode != .secure else { return nil }
+        if let url = URL(string: target), url.scheme != nil, url.scheme != "file" {
+            return nil
+        }
+        let baseDirectory = sourceDirectory
+            ?? includeBaseDirectory(for: options.sourceURL)
+            ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+        let resolved = URL(fileURLWithPath: target, relativeTo: baseDirectory).standardizedFileURL
+        if options.safeMode == .safe {
+            let allowed = resolved.path.hasPrefix(baseDirectory.standardizedFileURL.path)
+            if !allowed { return nil }
+        }
+        guard let text = try? String(contentsOf: resolved, encoding: .utf8) else { return nil }
+        return IncludeResult(
+            content: text,
+            directory: resolved.deletingLastPathComponent(),
+            filePath: resolved.path
+        )
+    }
+
+    func resolveIncludeSourceURL(from result: IncludeResult) -> URL? {
+        if let filePath = result.filePath {
+            if let url = URL(string: filePath), url.scheme != nil {
+                return url
+            }
+            return URL(fileURLWithPath: filePath).standardizedFileURL
+        }
+        return result.directory?.standardizedFileURL
+    }
+
+    func parseXIncludeParams(
+        _ raw: String?,
+        env: AttrEnv,
+        locals: [String: XADAttributeValue],
+        warnings: inout [AdocWarning],
+        span: AdocRange?
+    ) -> [String: XADAttributeValue] {
+        guard let raw, !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return [:]
+        }
+        let parsed = parseDocValue(raw, env: env, locals: locals)
+        guard case .dictionary(let dict) = parsed else {
+            warnings.append(
+                AdocWarning(
+                    message: "xinclude params must be a dictionary",
+                    span: span
+                )
+            )
+            return [:]
+        }
+        return dict
+    }
+
+    func expandXIncludeBlocks(
+        target: String,
+        attributes: [String: String],
+        span: AdocRange?,
+        env: inout AttrEnv,
+        warnings: inout [AdocWarning],
+        locals: [String: XADAttributeValue],
+        macros: inout [String: MacroDefinition],
+        macroStack: [String],
+        includeStack: [String],
+        sourceURL: URL?
+    ) -> [AdocBlock]? {
+        guard let result = resolveIncludeResult(target: target, sourceURL: sourceURL) else {
+            warnings.append(
+                AdocWarning(
+                    message: "xinclude could not resolve target: \(target)",
+                    span: span
+                )
+            )
+            return nil
+        }
+        let includeID = result.filePath ?? target
+        if includeStack.contains(includeID) {
+            warnings.append(
+                AdocWarning(
+                    message: "xinclude recursion detected: \(includeID)",
+                    span: span
+                )
+            )
+            return nil
+        }
+
+        let includeURL = resolveIncludeSourceURL(from: result)
+        let parser = AdocParser()
+        let preprocessorOptions = Preprocessor.Options(
+            sourceURL: includeURL,
+            safeMode: options.safeMode,
+            allowURIRead: options.allowURIRead,
+            includeResolvers: includeResolvers(for: includeURL ?? sourceURL)
+        )
+        let includedDoc = parser.parse(
+            text: result.content,
+            attributes: env.values,
+            lockedAttributeNames: [],
+            includeHeaderDerivedAttributes: true,
+            preprocessorOptions: preprocessorOptions,
+            xadOptions: env.xadOptions
+        )
+        warnings.append(contentsOf: includedDoc.warnings)
+
+        let (includedDefs, strippedBlocks) = collectMacroDefinitions(from: includedDoc.blocks, warnings: &warnings)
+        for (name, def) in includedDefs {
+            if macros[name] != nil {
+                warnings.append(
+                    AdocWarning(
+                        message: "macro redefinition: \(name)",
+                        span: def.span
+                    )
+                )
+            }
+            macros[name] = def
+        }
+
+        let effects = parseMacroEffects(attributes["effects"], warnings: &warnings, span: span)
+        if !effects.allowsAll {
+            let usedEffects = collectMacroEffects(from: strippedBlocks)
+            let missingEffects = usedEffects.subtracting(effects.allowed)
+            if !missingEffects.isEmpty {
+                let ordered = missingEffects.sorted().joined(separator: ", ")
+                warnings.append(
+                    AdocWarning(
+                        message: "xinclude uses effects not declared: \(ordered)",
+                        span: span
+                    )
+                )
+            }
+        }
+
+        let paramLocals = parseXIncludeParams(attributes["params"], env: env, locals: locals, warnings: &warnings, span: span)
+        let mergedLocals = mergeMacroLocals(base: locals, params: paramLocals, warnings: &warnings, span: span)
+
+        return processBlocks(
+            strippedBlocks,
+            env: &env,
+            warnings: &warnings,
+            locals: mergedLocals,
+            macros: &macros,
+            macroStack: macroStack,
+            includeStack: includeStack + [includeID],
+            sourceURL: includeURL ?? sourceURL
+        )
+    }
+
+    func expandXIncludeBlock(
+        _ macro: AdocBlockMacro,
+        env: inout AttrEnv,
+        warnings: inout [AdocWarning],
+        locals: [String: XADAttributeValue],
+        macros: inout [String: MacroDefinition],
+        macroStack: [String],
+        includeStack: [String],
+        sourceURL: URL?
+    ) -> [AdocBlock]? {
+        let target = resolveIncludeTarget(
+            macro.target ?? macro.attributes["target"],
+            env: env,
+            locals: locals,
+            warnings: &warnings,
+            span: macro.span
+        )
+        guard let target else { return nil }
+        return expandXIncludeBlocks(
+            target: target,
+            attributes: macro.attributes,
+            span: macro.span,
+            env: &env,
+            warnings: &warnings,
+            locals: locals,
+            macros: &macros,
+            macroStack: macroStack,
+            includeStack: includeStack,
+            sourceURL: sourceURL
+        )
+    }
+
+    func trimInlineWhitespace(_ inlines: [AdocInline]) -> [AdocInline] {
+        var trimmed = inlines
+        let ws = CharacterSet.whitespacesAndNewlines
+
+        func ltrim(_ value: String) -> String {
+            var scalars = value.unicodeScalars
+            while let first = scalars.first, ws.contains(first) {
+                scalars.removeFirst()
+            }
+            return String(scalars)
+        }
+
+        func rtrim(_ value: String) -> String {
+            var scalars = value.unicodeScalars
+            while let last = scalars.last, ws.contains(last) {
+                scalars.removeLast()
+            }
+            return String(scalars)
+        }
+
+        while let first = trimmed.first {
+            guard case .text(let text, let span) = first else { break }
+            let cleaned = ltrim(text)
+            if cleaned.isEmpty {
+                trimmed.removeFirst()
+                continue
+            }
+            if cleaned != text {
+                trimmed[0] = .text(cleaned, span: span)
+            }
+            break
+        }
+
+        while let last = trimmed.last {
+            guard case .text(let text, let span) = last else { break }
+            let cleaned = rtrim(text)
+            if cleaned.isEmpty {
+                trimmed.removeLast()
+                continue
+            }
+            if cleaned != text {
+                trimmed[trimmed.count - 1] = .text(cleaned, span: span)
+            }
+            break
+        }
+
+        return trimmed
+    }
+
+    func expandXIncludeInline(
+        target: String?,
+        attributes: [String: String],
+        span: AdocRange?,
+        env: inout AttrEnv,
+        warnings: inout [AdocWarning],
+        locals: [String: XADAttributeValue],
+        macros: inout [String: MacroDefinition],
+        macroStack: [String],
+        includeStack: [String],
+        sourceURL: URL?
+    ) -> [AdocInline]? {
+        let resolved = resolveIncludeTarget(
+            target,
+            env: env,
+            locals: locals,
+            warnings: &warnings,
+            span: span
+        )
+        guard let resolved else { return nil }
+        guard let blocks = expandXIncludeBlocks(
+            target: resolved,
+            attributes: attributes,
+            span: span,
+            env: &env,
+            warnings: &warnings,
+            locals: locals,
+            macros: &macros,
+            macroStack: macroStack,
+            includeStack: includeStack,
+            sourceURL: sourceURL
+        ) else {
+            return nil
+        }
+        guard blocks.count == 1, case .paragraph(let para) = blocks[0] else {
+            warnings.append(
+                AdocWarning(
+                    message: "inline xinclude must resolve to a single paragraph: \(resolved)",
+                    span: span
+                )
+            )
+            return nil
+        }
+        return trimInlineWhitespace(para.text.inlines)
+    }
+
     func expandInlineMacros(
         _ inlines: [AdocInline],
-        env: AttrEnv,
-        macros: [String: MacroDefinition],
+        env: inout AttrEnv,
         warnings: inout [AdocWarning],
-        macroStack: [String]
+        locals: [String: XADAttributeValue],
+        macros: inout [String: MacroDefinition],
+        macroStack: [String],
+        includeStack: [String],
+        sourceURL: URL?
     ) -> [AdocInline] {
         var result: [AdocInline] = []
         result.reserveCapacity(inlines.count)
@@ -718,33 +1110,54 @@ private extension XADProcessor {
         for inline in inlines {
             switch inline {
             case .strong(let xs, let span):
-                let mapped = expandInlineMacros(xs, env: env, macros: macros, warnings: &warnings, macroStack: macroStack)
+                let mapped = expandInlineMacros(xs, env: &env, warnings: &warnings, locals: locals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
                 result.append(.strong(mapped, span: span))
             case .emphasis(let xs, let span):
-                let mapped = expandInlineMacros(xs, env: env, macros: macros, warnings: &warnings, macroStack: macroStack)
+                let mapped = expandInlineMacros(xs, env: &env, warnings: &warnings, locals: locals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
                 result.append(.emphasis(mapped, span: span))
             case .mono(let xs, let span):
-                let mapped = expandInlineMacros(xs, env: env, macros: macros, warnings: &warnings, macroStack: macroStack)
+                let mapped = expandInlineMacros(xs, env: &env, warnings: &warnings, locals: locals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
                 result.append(.mono(mapped, span: span))
             case .mark(let xs, let span):
-                let mapped = expandInlineMacros(xs, env: env, macros: macros, warnings: &warnings, macroStack: macroStack)
+                let mapped = expandInlineMacros(xs, env: &env, warnings: &warnings, locals: locals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
                 result.append(.mark(mapped, span: span))
             case .superscript(let xs, let span):
-                let mapped = expandInlineMacros(xs, env: env, macros: macros, warnings: &warnings, macroStack: macroStack)
+                let mapped = expandInlineMacros(xs, env: &env, warnings: &warnings, locals: locals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
                 result.append(.superscript(mapped, span: span))
             case .subscript(let xs, let span):
-                let mapped = expandInlineMacros(xs, env: env, macros: macros, warnings: &warnings, macroStack: macroStack)
+                let mapped = expandInlineMacros(xs, env: &env, warnings: &warnings, locals: locals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
                 result.append(.subscript(mapped, span: span))
             case .link(let target, let text, let span):
-                let mapped = expandInlineMacros(text, env: env, macros: macros, warnings: &warnings, macroStack: macroStack)
+                let mapped = expandInlineMacros(text, env: &env, warnings: &warnings, locals: locals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
                 result.append(.link(target: target, text: mapped, span: span))
             case .xref(let target, let text, let span):
-                let mapped = expandInlineMacros(text, env: env, macros: macros, warnings: &warnings, macroStack: macroStack)
+                let mapped = expandInlineMacros(text, env: &env, warnings: &warnings, locals: locals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
                 result.append(.xref(target: target, text: mapped, span: span))
             case .footnote(let content, let ref, let id, let span):
-                let mapped = expandInlineMacros(content, env: env, macros: macros, warnings: &warnings, macroStack: macroStack)
+                let mapped = expandInlineMacros(content, env: &env, warnings: &warnings, locals: locals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
                 result.append(.footnote(content: mapped, ref: ref, id: id, span: span))
-            case .inlineMacro(let name, _, let body, let span):
+            case .inlineMacro(let name, let target, let body, let span):
+                let lowered = name.lowercased()
+                if lowered == "xinclude" {
+                    let args = parseMacroAttributeList(body)
+                    if let expanded = expandXIncludeInline(
+                        target: target,
+                        attributes: args,
+                        span: span,
+                        env: &env,
+                        warnings: &warnings,
+                        locals: locals,
+                        macros: &macros,
+                        macroStack: macroStack,
+                        includeStack: includeStack,
+                        sourceURL: sourceURL
+                    ) {
+                        result.append(contentsOf: expanded)
+                    } else {
+                        result.append(inline)
+                    }
+                    continue
+                }
                 if let definition = macros[name] {
                     if definition.kind == .inline {
                         if macroStack.contains(definition.name) {
@@ -786,10 +1199,13 @@ private extension XADProcessor {
                         }
                         let mapped = expandInlineMacros(
                             expandedInlines,
-                            env: macroEnv,
-                            macros: macros,
+                            env: &macroEnv,
                             warnings: &warnings,
-                            macroStack: macroStack + [definition.name]
+                            locals: locals,
+                            macros: &macros,
+                            macroStack: macroStack + [definition.name],
+                            includeStack: includeStack,
+                            sourceURL: sourceURL
                         )
                         result.append(contentsOf: mapped)
                     } else {
@@ -817,36 +1233,38 @@ private extension XADProcessor {
         env: inout AttrEnv,
         warnings: inout [AdocWarning],
         locals: [String: XADAttributeValue],
-        macros: [String: MacroDefinition],
-        macroStack: [String]
+        macros: inout [String: MacroDefinition],
+        macroStack: [String],
+        includeStack: [String],
+        sourceURL: URL?
     ) -> AdocBlock {
         switch block {
         case .section(var section):
-            section.title = expandText(section.title, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack)
-            section.blocks = processBlocks(section.blocks, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
+            section.title = expandText(section.title, env: &env, locals: locals, macros: &macros, warnings: &warnings, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
+            section.blocks = processBlocks(section.blocks, env: &env, warnings: &warnings, locals: locals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
             return .section(section)
 
         case .paragraph(var para):
-            para.text = expandText(para.text, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack)
+            para.text = expandText(para.text, env: &env, locals: locals, macros: &macros, warnings: &warnings, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
             return .paragraph(para)
 
         case .listing(var listing):
-            listing.text = expandText(listing.text, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack)
+            listing.text = expandText(listing.text, env: &env, locals: locals, macros: &macros, warnings: &warnings, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
             return .listing(listing)
 
         case .literalBlock(var literal):
-            literal.text = expandText(literal.text, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack)
+            literal.text = expandText(literal.text, env: &env, locals: locals, macros: &macros, warnings: &warnings, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
             return .literalBlock(literal)
 
         case .discreteHeading(var heading):
-            heading.title = expandText(heading.title, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack)
+            heading.title = expandText(heading.title, env: &env, locals: locals, macros: &macros, warnings: &warnings, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
             return .discreteHeading(heading)
 
         case .list(var list):
             list.items = list.items.map { item in
                 var copy = item
-                copy.principal = expandText(item.principal, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack)
-                copy.blocks = processBlocks(item.blocks, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
+                copy.principal = expandText(item.principal, env: &env, locals: locals, macros: &macros, warnings: &warnings, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
+                copy.blocks = processBlocks(item.blocks, env: &env, warnings: &warnings, locals: locals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
                 return copy
             }
             return .list(list)
@@ -854,50 +1272,50 @@ private extension XADProcessor {
         case .dlist(var dlist):
             dlist.items = dlist.items.map { item in
                 var copy = item
-                copy.term = expandText(item.term, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack)
+                copy.term = expandText(item.term, env: &env, locals: locals, macros: &macros, warnings: &warnings, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
                 if let principal = item.principal {
-                    copy.principal = expandText(principal, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack)
+                    copy.principal = expandText(principal, env: &env, locals: locals, macros: &macros, warnings: &warnings, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
                 }
-                copy.blocks = processBlocks(item.blocks, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
+                copy.blocks = processBlocks(item.blocks, env: &env, warnings: &warnings, locals: locals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
                 return copy
             }
             return .dlist(dlist)
 
         case .sidebar(var sidebar):
-            sidebar.title = sidebar.title.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
-            sidebar.blocks = processBlocks(sidebar.blocks, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
+            sidebar.title = sidebar.title.map { expandText($0, env: &env, locals: locals, macros: &macros, warnings: &warnings, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL) }
+            sidebar.blocks = processBlocks(sidebar.blocks, env: &env, warnings: &warnings, locals: locals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
             return .sidebar(sidebar)
 
         case .example(var example):
-            example.title = example.title.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
-            example.blocks = processBlocks(example.blocks, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
+            example.title = example.title.map { expandText($0, env: &env, locals: locals, macros: &macros, warnings: &warnings, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL) }
+            example.blocks = processBlocks(example.blocks, env: &env, warnings: &warnings, locals: locals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
             return .example(example)
 
         case .quote(var quote):
-            quote.title = quote.title.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
-            quote.attribution = quote.attribution.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
-            quote.citetitle = quote.citetitle.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
-            quote.blocks = processBlocks(quote.blocks, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
+            quote.title = quote.title.map { expandText($0, env: &env, locals: locals, macros: &macros, warnings: &warnings, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL) }
+            quote.attribution = quote.attribution.map { expandText($0, env: &env, locals: locals, macros: &macros, warnings: &warnings, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL) }
+            quote.citetitle = quote.citetitle.map { expandText($0, env: &env, locals: locals, macros: &macros, warnings: &warnings, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL) }
+            quote.blocks = processBlocks(quote.blocks, env: &env, warnings: &warnings, locals: locals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
             return .quote(quote)
 
         case .open(var open):
-            open.title = open.title.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
-            open.blocks = processBlocks(open.blocks, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
+            open.title = open.title.map { expandText($0, env: &env, locals: locals, macros: &macros, warnings: &warnings, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL) }
+            open.blocks = processBlocks(open.blocks, env: &env, warnings: &warnings, locals: locals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
             return .open(open)
 
         case .admonition(var admonition):
-            admonition.title = admonition.title.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
-            admonition.blocks = processBlocks(admonition.blocks, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
+            admonition.title = admonition.title.map { expandText($0, env: &env, locals: locals, macros: &macros, warnings: &warnings, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL) }
+            admonition.blocks = processBlocks(admonition.blocks, env: &env, warnings: &warnings, locals: locals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
             return .admonition(admonition)
 
         case .verse(var verse):
-            verse.title = verse.title.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
-            verse.attribution = verse.attribution.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
-            verse.citetitle = verse.citetitle.map { expandText($0, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack) }
+            verse.title = verse.title.map { expandText($0, env: &env, locals: locals, macros: &macros, warnings: &warnings, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL) }
+            verse.attribution = verse.attribution.map { expandText($0, env: &env, locals: locals, macros: &macros, warnings: &warnings, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL) }
+            verse.citetitle = verse.citetitle.map { expandText($0, env: &env, locals: locals, macros: &macros, warnings: &warnings, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL) }
             if let text = verse.text {
-                verse.text = expandText(text, env: env, locals: locals, macros: macros, warnings: &warnings, macroStack: macroStack)
+                verse.text = expandText(text, env: &env, locals: locals, macros: &macros, warnings: &warnings, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
             }
-            verse.blocks = processBlocks(verse.blocks, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
+            verse.blocks = processBlocks(verse.blocks, env: &env, warnings: &warnings, locals: locals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
             return .verse(verse)
 
         default:
@@ -911,8 +1329,10 @@ private extension XADProcessor {
         env: inout AttrEnv,
         warnings: inout [AdocWarning],
         locals: [String: XADAttributeValue],
-        macros: [String: MacroDefinition],
-        macroStack: [String]
+        macros: inout [String: MacroDefinition],
+        macroStack: [String],
+        includeStack: [String],
+        sourceURL: URL?
     ) -> (Int, [AdocBlock]) {
         guard case .blockMacro(let ifMacro) = blocks[startIndex] else {
             return (startIndex, [])
@@ -1038,7 +1458,7 @@ private extension XADProcessor {
             }
         }
 
-        let processed = processBlocks(selected, env: &env, warnings: &warnings, locals: locals, macros: macros, macroStack: macroStack)
+        let processed = processBlocks(selected, env: &env, warnings: &warnings, locals: locals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
         return (currentIndex, processed)
     }
 
@@ -1048,8 +1468,10 @@ private extension XADProcessor {
         env: inout AttrEnv,
         warnings: inout [AdocWarning],
         locals: [String: XADAttributeValue],
-        macros: [String: MacroDefinition],
-        macroStack: [String]
+        macros: inout [String: MacroDefinition],
+        macroStack: [String],
+        includeStack: [String],
+        sourceURL: URL?
     ) -> (Int, [AdocBlock]) {
         guard case .blockMacro(let forMacro) = blocks[startIndex] else {
             return (startIndex, [])
@@ -1167,7 +1589,7 @@ private extension XADProcessor {
                 var loopLocals = locals
                 loopLocals[indexName] = .number(Double(idx))
                 loopLocals[itemName] = value
-                let processed = processBlocks(body, env: &env, warnings: &warnings, locals: loopLocals, macros: macros, macroStack: macroStack)
+                let processed = processBlocks(body, env: &env, warnings: &warnings, locals: loopLocals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
                 expanded.append(contentsOf: processed)
             }
 
@@ -1193,7 +1615,7 @@ private extension XADProcessor {
                 var loopLocals = locals
                 loopLocals[keyName] = .string(key)
                 loopLocals[valueName] = value
-                let processed = processBlocks(body, env: &env, warnings: &warnings, locals: loopLocals, macros: macros, macroStack: macroStack)
+                let processed = processBlocks(body, env: &env, warnings: &warnings, locals: loopLocals, macros: &macros, macroStack: macroStack, includeStack: includeStack, sourceURL: sourceURL)
                 expanded.append(contentsOf: processed)
             }
 
@@ -1468,20 +1890,25 @@ private extension XADProcessor {
 
     func expandText(
         _ text: AdocText,
-        env: AttrEnv,
+        env: inout AttrEnv,
         locals: [String: XADAttributeValue],
-        macros: [String: MacroDefinition],
+        macros: inout [String: MacroDefinition],
         warnings: inout [AdocWarning],
-        macroStack: [String]
+        macroStack: [String],
+        includeStack: [String],
+        sourceURL: URL?
     ) -> AdocText {
         let localEnv = localEnvWithLocals(env, locals: locals)
         let attributedInlines = text.inlines.map { $0.applyingAttributes(using: localEnv) }
         let expandedInlines = expandInlineMacros(
             attributedInlines,
-            env: localEnv,
-            macros: macros,
+            env: &env,
             warnings: &warnings,
-            macroStack: macroStack
+            locals: locals,
+            macros: &macros,
+            macroStack: macroStack,
+            includeStack: includeStack,
+            sourceURL: sourceURL
         )
         return AdocText(inlines: expandedInlines, span: text.span)
     }
