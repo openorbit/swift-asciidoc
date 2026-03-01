@@ -13,6 +13,11 @@ Current additions include:
 * Multi-line JSON/JSON5 attribute values without explicit continuation escapes.
 * Attribute accessors for nested values (e.g. `foo.bar` and bracket indexing).
 * XAD access macros for nested values (`get::path[]` and `set::path[value]`), plus shorthand access with `{foo.bar}`.
+* User-defined macros (block and inline) with parameters, defaults, and `{body}` substitution for block macros.
+* Macro recursion detection (direct and indirect) with warnings.
+* Macro side-effect allow list via `effects="docpush docset docput"` (or `effects=all`).
+* Control directives: `if`/`elif`/`else`/`end` and `for` loops, with expression validation warnings.
+* Document variables (`docset`, `docpush`, `docput`) for building registries under `doc.*`.
 * Layout-oriented attributes intended for paged and PDF-style renderers.
 * Scoped attributes for block- and section-level overrides.
 
