@@ -119,4 +119,42 @@ struct XADMacroTests {
         let messages = processed.warnings.map { $0.message }
         #expect(messages.filter { $0.contains("macro uses effects not declared") }.isEmpty)
     }
+
+    @Test
+    func blockMacroRecursionWarns() {
+        let src = """
+        macro::loop[]
+        loop::[]
+        endmacro::loop[]
+
+        loop::[]
+        """
+
+        let parser = AdocParser()
+        let doc = parser.parse(text: src, xadOptions: XADOptions(enabled: true))
+        let processed = XADProcessor().apply(document: doc)
+        let messages = processed.warnings.map { $0.message }
+        #expect(messages.contains { $0.contains("macro recursion detected: loop") })
+    }
+
+    @Test
+    func inlineMacroRecursionWarns() {
+        let src = """
+        macro::a[kind=inline]
+        b:[]
+        endmacro::a[]
+
+        macro::b[kind=inline]
+        a:[]
+        endmacro::b[]
+
+        a:[]
+        """
+
+        let parser = AdocParser()
+        let doc = parser.parse(text: src, xadOptions: XADOptions(enabled: true))
+        let processed = XADProcessor().apply(document: doc)
+        let messages = processed.warnings.map { $0.message }
+        #expect(messages.contains { $0.contains("macro recursion detected: a") })
+    }
 }
