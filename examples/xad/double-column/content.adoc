@@ -1,0 +1,28 @@
+= Double Column Layout Example
+Author Example <author@example.com>
+:revdate: 2026-03-02
+
+[slot=title]
+Double Column Layout Example
+
+[slot=authors]
+Author Example
+
+[slot=abstract]
+This abstract sits above a two-column layout driven by left/right slots.
+
+== Left Column
+
+[slot=left, order=10]
+Left column paragraph one.
+
+[slot=left, order=20]
+Left column paragraph two.
+
+== Right Column
+
+[slot=right, order=10]
+Right column paragraph one.
+
+[slot=right, order=20]
+Right column paragraph two.

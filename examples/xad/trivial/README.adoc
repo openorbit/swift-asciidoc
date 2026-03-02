@@ -1,0 +1,9 @@
+= Trivial Template Example
+
+This example pairs `content.adoc` with the `Templates/xad/trivial` layout.
+
+To render:
+
+----
+asciidoc-swift xad-paged-html --xad-layout-template trivial examples/xad/trivial/content.adoc
+----

@@ -1,0 +1,21 @@
+= Trivial Layout Example
+Author Example <author@example.com>
+:revdate: 2026-03-02
+
+[slot=title]
+Trivial Layout Example
+
+[slot=authors]
+Author Example
+
+[slot=abstract]
+This is a short abstract describing the trivial single-column layout.
+
+== Introduction
+
+This document demonstrates the trivial single-column template. The body
+content flows in the main slot.
+
+== Details
+
+More content goes here to show the normal flow.
