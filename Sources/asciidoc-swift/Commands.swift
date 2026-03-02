@@ -838,7 +838,8 @@ private func renderDocument(
     attributeAssignments: [String],
     outputPath: String?,
     enabledExtensions: [String],
-    xadOptions: XADOptions
+    xadOptions: XADOptions,
+    xadLayoutProgram: LayoutProgram? = nil
 ) throws {
     let (source, sourcePath) = try readRenderSource(stdin: stdin, inputPath: inputPath)
     let documentDirectory = sourcePath.map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
@@ -885,7 +886,11 @@ private func renderDocument(
     let engine = StencilTemplateEngine(templateRoot: templateRoot)
     let renderer = DocumentRenderer(
         engine: engine,
-        config: RenderConfig(backend: backend, xadOptions: xadOptions)
+        config: RenderConfig(
+            backend: backend,
+            xadOptions: xadOptions,
+            xadLayoutProgram: xadLayoutProgram
+        )
     )
     let rendered = try renderer.render(document: doc)
     try writeRenderedOutput(rendered, explicitPath: outputPath, sourcePath: sourcePath, defaultExtension: defaultExtension)

@@ -13,6 +13,7 @@ public struct RenderConfig {
     public var navigationTree: [String: Any]?
     public var customTemplateName: String?
     public var xadOptions: XADOptions
+    public var xadLayoutProgram: LayoutProgram?
 
     public init(
         backend: Backend,
@@ -20,13 +21,15 @@ public struct RenderConfig {
         xrefResolver: XrefResolver? = nil,
         navigationTree: [String: Any]? = nil,
         customTemplateName: String? = nil,
-        xadOptions: XADOptions = .init()
+        xadOptions: XADOptions = .init(),
+        xadLayoutProgram: LayoutProgram? = nil
     ) {
         self.backend = backend
         self.xrefResolver = xrefResolver
         self.navigationTree = navigationTree
         self.customTemplateName = customTemplateName
         self.xadOptions = xadOptions
+        self.xadLayoutProgram = xadLayoutProgram
         self.inlineBackend = inlineBackend ?? {
             switch backend {
             case .html5:    return .html5
@@ -92,6 +95,19 @@ public final class DocumentRenderer {
         }
 
         let typedAttributes = docToRender.typedAttributes.mapValues { $0.toJSONCompatible() }
+        var xadContext: [String: Any] = [
+            "enabled": config.xadOptions.enabled,
+            "strict": config.xadOptions.strict,
+            "pagedJS": config.xadOptions.pagedJS,
+            "templatePath": config.xadOptions.templatePath ?? "",
+            "layoutTemplate": config.xadOptions.layoutTemplate ?? "",
+            "layoutTemplateBase": config.xadOptions.layoutTemplateBase ?? "",
+            "layoutTemplateSearchPaths": config.xadOptions.layoutTemplateSearchPaths
+        ]
+        if let program = config.xadLayoutProgram {
+            xadContext["layoutProgram"] = layoutProgramContext(program)
+        }
+
         var context: [String: Any] = [
             "attributes": docToRender.attributes,
             "typedAttributes": typedAttributes,
@@ -99,15 +115,7 @@ public final class DocumentRenderer {
             "blocks": blocks,
             "footnotes": footnotes.map { renderFootnoteDefinition($0, context: inlineContext) },
             "indexCatalog": indexEntries,
-            "xad": [
-                "enabled": config.xadOptions.enabled,
-                "strict": config.xadOptions.strict,
-                "pagedJS": config.xadOptions.pagedJS,
-                "templatePath": config.xadOptions.templatePath ?? "",
-                "layoutTemplate": config.xadOptions.layoutTemplate ?? "",
-                "layoutTemplateBase": config.xadOptions.layoutTemplateBase ?? "",
-                "layoutTemplateSearchPaths": config.xadOptions.layoutTemplateSearchPaths
-            ]
+            "xad": xadContext
         ]
         
         if let nav = config.navigationTree {
@@ -134,6 +142,78 @@ public final class DocumentRenderer {
             "content": renderInlines(def.content, context: context),
             "textPlain": def.content.plainText()
         ]
+    }
+
+    private func layoutProgramContext(_ program: LayoutProgram) -> [String: Any] {
+        return [
+            "expressions": program.expressions.map { layoutExprContext($0) }
+        ]
+    }
+
+    private func layoutExprContext(_ expr: LayoutExpr) -> [String: Any] {
+        switch expr {
+        case .node(let node):
+            return [
+                "type": "node",
+                "name": node.name,
+                "args": node.args.map { layoutArgContext($0) },
+                "children": node.children.map { layoutExprContext($0) }
+            ]
+        case .value(let value):
+            return [
+                "type": "value",
+                "value": layoutValueContext(value)
+            ]
+        }
+    }
+
+    private func layoutArgContext(_ arg: LayoutArg) -> [String: Any] {
+        return [
+            "name": arg.name ?? "",
+            "named": arg.name != nil,
+            "value": layoutExprContext(arg.value)
+        ]
+    }
+
+    private func layoutValueContext(_ value: LayoutValue) -> Any {
+        switch value {
+        case .string(let string):
+            return string
+        case .number(let number):
+            return number
+        case .boolean(let boolean):
+            return boolean
+        case .null:
+            return NSNull()
+        case .array(let values):
+            return values.map { layoutValueContext($0) }
+        case .dict(let dict):
+            var out: [String: Any] = [:]
+            for (key, entry) in dict {
+                out[key] = layoutValueContext(entry)
+            }
+            return out
+        case .ref(let ref):
+            var payload: [String: Any] = [
+                "type": "ref",
+                "parts": ref.parts
+            ]
+            if let index = ref.index {
+                payload["index"] = layoutIndexContext(index)
+            }
+            return payload
+        }
+    }
+
+    private func layoutIndexContext(_ index: LayoutIndex) -> Any {
+        switch index {
+        case .number(let number):
+            return ["type": "number", "value": number]
+        case .string(let string):
+            return ["type": "string", "value": string]
+        case .identifier(let ident):
+            return ["type": "identifier", "value": ident]
+        }
     }
 
     private func renderBlocks(_ blocks: [AdocBlock], context: InlineContext) -> [[String: Any]] {
