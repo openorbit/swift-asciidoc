@@ -94,7 +94,7 @@ and Paged.js hooks turned on.
 ##### Usage
 
 ```bash
-asciidoc-swift xad-paged-html [--stdin] [--template <template>] [--attribute <attribute> ...] [--output <output>] [<input-path>] [--extension <extension> ...]
+asciidoc-swift xad-paged-html [--stdin] [--template <template>] [--xad-layout-template <layout>] [--xad-template-base <dir>] [--xad-template-search-path <dir> ...] [--list-xad-templates] [--attribute <attribute> ...] [--output <output>] [<input-path>] [--extension <extension> ...]
 ```
 
 ##### Arguments and Options
@@ -106,10 +106,18 @@ asciidoc-swift xad-paged-html [--stdin] [--template <template>] [--attribute <at
 | `--template <template>` | Path to the Stencil templates root directory. (default: `Templates`) |
 | `--xad-strict` | Enable strict XAD parsing. |
 | `--xad-template <xad-template>` | Path to XAD template (`.adoc`). |
+| `--xad-layout-template <layout>` | XAD paged layout template name or path (default: `default`). |
+| `--xad-template-base <dir>` | Base directory for resolving XAD paged template paths. |
+| `--xad-template-search-path <dir>` | Additional XAD paged template search paths (repeatable). |
+| `--list-xad-templates` | List available XAD paged templates and exit. |
 | `-a`, `--attribute <attribute>` | Set document attribute (`name[=value]`). Repeatable. |
 | `-o`, `--output <output>` | Write rendered output to this path. |
 | `-e`, `--extension <extension>` | Enable an extension by name (repeatable). |
 | `-h`, `--help` | Show help information. |
+
+##### XAD Layout Context
+
+When using `xad-paged-html`, the parsed layout DSL is exposed in the render context under `xad.layoutProgram`. The structure is JSON-friendly and includes `expressions` with `node` and `value` entries (each node includes `name`, `args`, and `children`).
 
 
 #### `docbook` subcommand
@@ -200,6 +208,7 @@ asciidoc-swift lint [--stdin] [--no-spellcheck] [--no-semantic-breaks] [--spell-
 
 - [AsciiDocCore](../asciidoccore)
 - [AsciiDocRender](../asciidocrender)
+- [AsciiDocPagedRendering](../asciidocpagedrendering)
 - [AsciiDocTools](../asciidoctools)
 - [AsciiDocExtensions](../asciidocextensions)
 
