@@ -1,0 +1,11 @@
+// Trivial single-column layout.
+pages[
+  page(master:"default")[
+    stack[
+      flow(slot("title")),
+      flow(slot("abstract")),
+      flow(slot("authors")),
+      flow(slot("main"))
+    ]
+  ]
+]
