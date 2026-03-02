@@ -103,7 +103,10 @@ public final class DocumentRenderer {
                 "enabled": config.xadOptions.enabled,
                 "strict": config.xadOptions.strict,
                 "pagedJS": config.xadOptions.pagedJS,
-                "templatePath": config.xadOptions.templatePath ?? ""
+                "templatePath": config.xadOptions.templatePath ?? "",
+                "layoutTemplate": config.xadOptions.layoutTemplate ?? "",
+                "layoutTemplateBase": config.xadOptions.layoutTemplateBase ?? "",
+                "layoutTemplateSearchPaths": config.xadOptions.layoutTemplateSearchPaths
             ]
         ]
         

@@ -10,6 +10,7 @@ import AsciiDocCore
 import AsciiDocTools
 import AsciiDocExtensions
 import AsciiDocAntora
+import AsciiDocPagedRendering
 
 private struct AdapterInput: Decodable {
   enum Payload: String, Decodable {
@@ -216,7 +217,10 @@ struct HTML: AsyncParsableCommand {
             enabled: xad,
             pagedJS: xadPagedJS,
             strict: xadStrict,
-            templatePath: xadTemplate
+            templatePath: xadTemplate,
+            layoutTemplate: nil,
+            layoutTemplateBase: nil,
+            layoutTemplateSearchPaths: []
         )
         try renderDocument(
             backend: .html5,
@@ -275,7 +279,10 @@ struct XadHtml: AsyncParsableCommand {
             enabled: true,
             pagedJS: false,
             strict: xadStrict,
-            templatePath: xadTemplate
+            templatePath: xadTemplate,
+            layoutTemplate: nil,
+            layoutTemplateBase: nil,
+            layoutTemplateSearchPaths: []
         )
         try renderDocument(
             backend: .html5,
@@ -309,6 +316,22 @@ struct XadPagedHtml: AsyncParsableCommand {
     @Option(name: .long, help: "Path to XAD template (.adoc).")
     var xadTemplate: String?
 
+    @Option(name: .long, help: "XAD paged layout template name or path.")
+    var xadLayoutTemplate: String?
+
+    @Option(name: .long, help: "Base directory for resolving XAD paged template paths.")
+    var xadTemplateBase: String?
+
+    @Option(
+        name: .long,
+        parsing: .upToNextOption,
+        help: "Additional XAD paged template search paths."
+    )
+    var xadTemplateSearchPath: [String] = []
+
+    @Flag(name: .long, help: "List available XAD paged templates and exit.")
+    var listXadTemplates: Bool = false
+
     @Option(
         name: [.customShort("a"), .customLong("attribute")],
         parsing: .unconditionalSingleValue,
@@ -330,11 +353,44 @@ struct XadPagedHtml: AsyncParsableCommand {
     var extensions: [String] = []
 
     mutating func run() async throws {
+        let templateBaseURL = resolveTemplateBaseURL(xadTemplateBase)
+        var registry = XADTemplateRegistry(searchPaths: defaultTemplateRoots())
+        for path in resolveTemplateSearchPaths(xadTemplateSearchPath, baseURL: templateBaseURL) {
+            registry.addSearchPath(path)
+        }
+
+        if listXadTemplates {
+            let names = registry.listTemplates()
+            if names.isEmpty {
+                print("No XAD paged templates found.")
+            } else {
+                for name in names {
+                    print(name)
+                }
+            }
+            return
+        }
+
+        let templateSelection = xadLayoutTemplate ?? "default"
+        let templateResult: (XADTemplateDescriptor?, [AdocWarning])
+        if let overrideURL = resolveExistingTemplateURL(templateSelection, baseURL: templateBaseURL) {
+            templateResult = registry.loadTemplate(at: overrideURL, baseURL: templateBaseURL)
+        } else {
+            templateResult = registry.loadTemplate(named: templateSelection, baseURL: templateBaseURL)
+        }
+        emitTemplateWarnings(templateResult.1)
+        guard templateResult.0 != nil else {
+            throw ValidationError("Unable to load XAD template: \(templateSelection)")
+        }
+
         let xadOptions = makeXadOptions(
             enabled: true,
             pagedJS: true,
             strict: xadStrict,
-            templatePath: xadTemplate
+            templatePath: xadTemplate,
+            layoutTemplate: templateSelection,
+            layoutTemplateBase: xadTemplateBase,
+            layoutTemplateSearchPaths: xadTemplateSearchPath
         )
         try renderDocument(
             backend: .html5,
@@ -399,7 +455,10 @@ struct DocBook: AsyncParsableCommand {
             enabled: xad,
             pagedJS: xadPagedJS,
             strict: xadStrict,
-            templatePath: xadTemplate
+            templatePath: xadTemplate,
+            layoutTemplate: nil,
+            layoutTemplateBase: nil,
+            layoutTemplateSearchPaths: []
         )
         try renderDocument(
             backend: .docbook5,
@@ -464,7 +523,10 @@ struct Latex: AsyncParsableCommand {
             enabled: xad,
             pagedJS: xadPagedJS,
             strict: xadStrict,
-            templatePath: xadTemplate
+            templatePath: xadTemplate,
+            layoutTemplate: nil,
+            layoutTemplateBase: nil,
+            layoutTemplateSearchPaths: []
         )
         try renderDocument(
             backend: .latex,
@@ -711,18 +773,59 @@ struct Antora: AsyncParsableCommand {
 // Rendering helpers
 extension PlantUMLExtension.Format: ExpressibleByArgument {}
 
+private func defaultTemplateRoots() -> [URL] {
+    var roots: [URL] = []
+    if let bundleTemplates = Bundle.module.url(forResource: "Templates", withExtension: nil) {
+        roots.append(bundleTemplates)
+    }
+    let cwd = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    roots.append(cwd.appendingPathComponent("Templates"))
+    return roots
+}
+
+private func resolveTemplateBaseURL(_ value: String?) -> URL? {
+    guard let value else { return nil }
+    return URL(fileURLWithPath: value).standardizedFileURL
+}
+
+private func resolveTemplateSearchPaths(_ values: [String], baseURL: URL?) -> [URL] {
+    let base = baseURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    return values.map { URL(fileURLWithPath: $0, relativeTo: base).standardizedFileURL }
+}
+
+private func resolveExistingTemplateURL(_ value: String, baseURL: URL?) -> URL? {
+    let base = baseURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    let candidate = URL(fileURLWithPath: value, relativeTo: base).standardizedFileURL
+    if FileManager.default.fileExists(atPath: candidate.path) {
+        return candidate
+    }
+    return nil
+}
+
+private func emitTemplateWarnings(_ warnings: [AdocWarning]) {
+    for warning in warnings {
+        FileHandle.standardError.write(Data("Template warning: \(warning.message)\n".utf8))
+    }
+}
+
 private func makeXadOptions(
     enabled: Bool,
     pagedJS: Bool,
     strict: Bool,
-    templatePath: String?
+    templatePath: String?,
+    layoutTemplate: String?,
+    layoutTemplateBase: String?,
+    layoutTemplateSearchPaths: [String]
 ) -> XADOptions {
-    let shouldEnable = enabled || pagedJS || templatePath != nil
+    let shouldEnable = enabled || pagedJS || templatePath != nil || layoutTemplate != nil
     return XADOptions(
         enabled: shouldEnable,
         strict: strict,
         pagedJS: pagedJS,
-        templatePath: templatePath
+        templatePath: templatePath,
+        layoutTemplate: layoutTemplate,
+        layoutTemplateBase: layoutTemplateBase,
+        layoutTemplateSearchPaths: layoutTemplateSearchPaths
     )
 }
 

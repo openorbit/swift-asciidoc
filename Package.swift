@@ -19,6 +19,7 @@ let package = Package(
       .library(name: "AsciiDocExtensions", targets: ["AsciiDocExtensions"]),
       .library(name: "AsciiDocTools", targets: ["AsciiDocTools"]),
       .library(name: "AsciiDocAntora", targets: ["AsciiDocAntora"]),
+      .library(name: "AsciiDocPagedRendering", targets: ["AsciiDocPagedRendering"]),
 
       .executable(name: "asciidoc-swift", targets: ["asciidoc-swift"])
     ],
@@ -84,6 +85,11 @@ let package = Package(
             path: "Sources/AsciiDocAntora"
         ),
 
+        .target(
+            name: "AsciiDocPagedRendering",
+            dependencies: ["AsciiDocCore"],
+            path: "Sources/AsciiDocPagedRendering"
+        ),
 
         // CLI executable that the TCK will invoke
         .executableTarget(
@@ -94,6 +100,7 @@ let package = Package(
                 "AsciiDocExtensions",
                 "AsciiDocTools",
                 "AsciiDocAntora",
+                "AsciiDocPagedRendering",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
             path: "Sources/asciidoc-swift",
@@ -108,7 +115,7 @@ let package = Package(
         // Unit tests for the core; add fixture files under Tests/AsciiDocCoreTests/Fixtures as needed
         .testTarget(
             name: "AsciiDocCoreTests",
-            dependencies: ["AsciiDocCore", "AsciiDocTools", "AsciiDocRender"],
+            dependencies: ["AsciiDocCore", "AsciiDocTools", "AsciiDocRender", "AsciiDocPagedRendering"],
             path: "Tests/AsciiDocCoreTests",
             swiftSettings: [
                 .interoperabilityMode(.Cxx)

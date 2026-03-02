@@ -1,0 +1,6 @@
+// Default XAD paged layout
+pages[
+  page(master:"default")[
+    flow(slot("main"))
+  ]
+]
