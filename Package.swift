@@ -49,6 +49,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Stencil", package: "Stencil"),
                 "AsciiDocCore",
+                "AsciiDocPagedRendering",
             ],
             path: "Sources/AsciiDocRender",
             swiftSettings: [

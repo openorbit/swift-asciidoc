@@ -5,6 +5,7 @@
 
 import Foundation
 import AsciiDocCore
+import AsciiDocPagedRendering
 
 public struct RenderConfig {
     public var backend: Backend
@@ -141,10 +142,24 @@ public final class DocumentRenderer {
         if config.xadOptions.enabled {
             var slotContexts = renderSlotGroups(slotExtraction.slots, context: inlineContext)
             slotContexts["main"] = blocks
+            let collectionContexts = renderSlotGroups(slotExtraction.collections, context: inlineContext)
             xadContext["slots"] = slotContexts
-            xadContext["collections"] = renderSlotGroups(slotExtraction.collections, context: inlineContext)
-            if !slotExtraction.warnings.isEmpty {
-                xadContext["warnings"] = slotExtraction.warnings.map { $0.message }
+            xadContext["collections"] = collectionContexts
+
+            var warnings = slotExtraction.warnings
+            if let program = config.xadLayoutProgram {
+                let evaluator = XADLayoutEvaluator()
+                let evaluation = evaluator.evaluate(
+                    program: program,
+                    slots: slotContexts,
+                    collections: collectionContexts
+                )
+                xadContext["layoutTree"] = evaluation.tree
+                warnings.append(contentsOf: evaluation.warnings)
+            }
+
+            if !warnings.isEmpty {
+                xadContext["warnings"] = warnings.map { $0.message }
             }
         }
         if let program = config.xadLayoutProgram {
@@ -610,8 +625,8 @@ public final class DocumentRenderer {
         ]
     }
 
-    private func renderSlotGroups(_ groups: [String: [SlotItem]], context: InlineContext) -> [String: Any] {
-        var rendered: [String: Any] = [:]
+    private func renderSlotGroups(_ groups: [String: [SlotItem]], context: InlineContext) -> [String: [[String: Any]]] {
+        var rendered: [String: [[String: Any]]] = [:]
         for (name, items) in groups {
             let sorted = items.sorted {
                 if $0.order == $1.order { return $0.index < $1.index }
