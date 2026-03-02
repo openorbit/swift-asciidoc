@@ -46,6 +46,24 @@ public final class DocumentRenderer {
     private let inlineRenderer: AdocInlineRenderer
     private var calloutSerial: Int = 0
 
+    private enum SlotMode {
+        case move
+        case copy
+    }
+
+    private struct SlotItem {
+        let block: AdocBlock
+        let order: Double
+        let index: Int
+    }
+
+    private struct SlotExtractionResult {
+        var mainBlocks: [AdocBlock]
+        var slots: [String: [SlotItem]]
+        var collections: [String: [SlotItem]]
+        var warnings: [AdocWarning]
+    }
+
     public init(engine: TemplateEngine, config: RenderConfig) {
         self.engine = engine
         self.config = config
@@ -77,7 +95,23 @@ public final class DocumentRenderer {
         let docToRender = resolution.document
         let footnotes = resolution.definitions
 
-        let blocks = renderBlocks(docToRender.blocks, context: inlineContext)
+        let slotExtraction: SlotExtractionResult
+        let blocks: [[String: Any]]
+        if config.xadOptions.enabled {
+            slotExtraction = extractSlotsAndCollections(
+                from: docToRender.blocks,
+                attributes: docToRender.attributes
+            )
+            blocks = renderBlocks(slotExtraction.mainBlocks, context: inlineContext)
+        } else {
+            slotExtraction = SlotExtractionResult(
+                mainBlocks: docToRender.blocks,
+                slots: [:],
+                collections: [:],
+                warnings: []
+            )
+            blocks = renderBlocks(docToRender.blocks, context: inlineContext)
+        }
 
         let indexResolver = IndexResolver()
         let indexCatalog = indexResolver.resolve(docToRender)
@@ -104,6 +138,15 @@ public final class DocumentRenderer {
             "layoutTemplateBase": config.xadOptions.layoutTemplateBase ?? "",
             "layoutTemplateSearchPaths": config.xadOptions.layoutTemplateSearchPaths
         ]
+        if config.xadOptions.enabled {
+            var slotContexts = renderSlotGroups(slotExtraction.slots, context: inlineContext)
+            slotContexts["main"] = blocks
+            xadContext["slots"] = slotContexts
+            xadContext["collections"] = renderSlotGroups(slotExtraction.collections, context: inlineContext)
+            if !slotExtraction.warnings.isEmpty {
+                xadContext["warnings"] = slotExtraction.warnings.map { $0.message }
+            }
+        }
         if let program = config.xadLayoutProgram {
             xadContext["layoutProgram"] = layoutProgramContext(program)
         }
@@ -565,6 +608,189 @@ public final class DocumentRenderer {
             "id": blockIdentifier(item.id, meta: item.meta),
             "meta": metaContext(item.meta)
         ]
+    }
+
+    private func renderSlotGroups(_ groups: [String: [SlotItem]], context: InlineContext) -> [String: Any] {
+        var rendered: [String: Any] = [:]
+        for (name, items) in groups {
+            let sorted = items.sorted {
+                if $0.order == $1.order { return $0.index < $1.index }
+                return $0.order < $1.order
+            }
+            let slotBlocks = sorted.map { $0.block }
+            rendered[name] = renderBlocks(slotBlocks, context: context)
+        }
+        return rendered
+    }
+
+    private func extractSlotsAndCollections(
+        from blocks: [AdocBlock],
+        attributes: [String: String?]
+    ) -> SlotExtractionResult {
+        var slots: [String: [SlotItem]] = [:]
+        var collections: [String: [SlotItem]] = [:]
+        var warnings: [AdocWarning] = []
+        var slotModeCache: [String: SlotMode] = [:]
+        var index = 0
+
+        func attributeValue(_ name: String) -> String? {
+            guard let value = attributes[name] else { return nil }
+            return value ?? ""
+        }
+
+        func slotMode(for slot: String) -> SlotMode {
+            if let cached = slotModeCache[slot] { return cached }
+            let raw = attributeValue("slot.mode.\(slot)") ?? attributeValue("slot.mode.default")
+            let mode: SlotMode
+            if let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+                switch raw.lowercased() {
+                case "move":
+                    mode = .move
+                case "copy":
+                    mode = .copy
+                default:
+                    warnings.append(AdocWarning(message: "Invalid slot.mode value '\(raw)' for '\(slot)'; defaulting to move."))
+                    mode = .move
+                }
+            } else {
+                mode = .move
+            }
+            slotModeCache[slot] = mode
+            return mode
+        }
+
+        func parseOrder(_ raw: String?, context: String, span: AdocRange?) -> Double {
+            guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+                return 0
+            }
+            if let value = Double(raw) {
+                return value
+            }
+            warnings.append(AdocWarning(message: "Invalid order '\(raw)' for \(context); defaulting to 0.", span: span))
+            return 0
+        }
+
+        func normalizedName(_ raw: String?) -> String? {
+            guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+                return nil
+            }
+            return raw
+        }
+
+        func addSlot(_ name: String, block: AdocBlock, order: Double, index: Int) {
+            slots[name, default: []].append(SlotItem(block: block, order: order, index: index))
+        }
+
+        func addCollection(_ name: String, block: AdocBlock, order: Double, index: Int) {
+            collections[name, default: []].append(SlotItem(block: block, order: order, index: index))
+        }
+
+        func extractBlocks(_ blocks: [AdocBlock]) -> [AdocBlock] {
+            var out: [AdocBlock] = []
+            for block in blocks {
+                if let extracted = extractBlock(block) {
+                    out.append(extracted)
+                }
+            }
+            return out
+        }
+
+        func extractBlock(_ block: AdocBlock) -> AdocBlock? {
+            let meta = blockMeta(block)
+            let slotName = normalizedName(meta.attributes["slot"])
+            let collectionName = normalizedName(meta.attributes["collect"])
+            let orderContext = slotName ?? collectionName ?? "main"
+            let order = parseOrder(meta.attributes["order"], context: orderContext, span: meta.span)
+            index += 1
+            let currentIndex = index
+
+            if let collectionName {
+                addCollection(collectionName, block: block, order: order, index: currentIndex)
+            }
+
+            let effectiveSlot = slotName ?? "main"
+            if effectiveSlot != "main" {
+                addSlot(effectiveSlot, block: block, order: order, index: currentIndex)
+            }
+
+            let shouldMove = effectiveSlot != "main" && slotMode(for: effectiveSlot) == .move
+            if shouldMove {
+                return nil
+            }
+
+            if slotName != nil || collectionName != nil {
+                return block
+            }
+
+            switch block {
+            case .section(var s):
+                s.blocks = extractBlocks(s.blocks)
+                return .section(s)
+            case .sidebar(var s):
+                s.blocks = extractBlocks(s.blocks)
+                return .sidebar(s)
+            case .example(var e):
+                e.blocks = extractBlocks(e.blocks)
+                return .example(e)
+            case .quote(var q):
+                q.blocks = extractBlocks(q.blocks)
+                return .quote(q)
+            case .open(var o):
+                o.blocks = extractBlocks(o.blocks)
+                return .open(o)
+            case .admonition(var a):
+                a.blocks = extractBlocks(a.blocks)
+                return .admonition(a)
+            case .verse(var v):
+                v.blocks = extractBlocks(v.blocks)
+                return .verse(v)
+            case .list(var l):
+                l.items = l.items.map { item in
+                    var updated = item
+                    updated.blocks = extractBlocks(item.blocks)
+                    return updated
+                }
+                return .list(l)
+            case .dlist(var d):
+                d.items = d.items.map { item in
+                    var updated = item
+                    updated.blocks = extractBlocks(item.blocks)
+                    return updated
+                }
+                return .dlist(d)
+            default:
+                return block
+            }
+        }
+
+        let mainBlocks = extractBlocks(blocks)
+        return SlotExtractionResult(
+            mainBlocks: mainBlocks,
+            slots: slots,
+            collections: collections,
+            warnings: warnings
+        )
+    }
+
+    private func blockMeta(_ block: AdocBlock) -> AdocBlockMeta {
+        switch block {
+        case .section(let s): return s.meta
+        case .paragraph(let p): return p.meta
+        case .listing(let l): return l.meta
+        case .list(let l): return l.meta
+        case .dlist(let d): return d.meta
+        case .discreteHeading(let h): return h.meta
+        case .sidebar(let s): return s.meta
+        case .example(let e): return e.meta
+        case .quote(let q): return q.meta
+        case .open(let o): return o.meta
+        case .admonition(let a): return a.meta
+        case .verse(let v): return v.meta
+        case .literalBlock(let l): return l.meta
+        case .table(let t): return t.meta
+        case .math(let m): return m.meta
+        case .blockMacro(let m): return m.meta
+        }
     }
 
     private func renderInlines(_ inlines: [AdocInline], context: InlineContext) -> String {
