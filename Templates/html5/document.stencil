@@ -477,9 +477,13 @@
   </head>
   <body>
     {% if xad and xad.enabled and xad.layoutTree %}
-      {% with node=xad.layoutTree %}
-        {% include "xad/layout-node.stencil" %}
-      {% endwith %}
+      <div class="xad-doc">
+        <div class="xad-layout">
+          {% for node in xad.layoutTree.nodes %}
+            {% include "xad/layout-node.stencil" %}
+          {% endfor %}
+        </div>
+      </div>
     {% else %}
       <div class="doc-shell">
         {% if headerTitle or attributes["subtitle"] or attributes["author"] or attributes["revdate"] %}
