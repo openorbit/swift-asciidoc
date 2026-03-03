@@ -1,3 +1,7 @@
+= Trivial Template
+
+[layout]
+----
 // Trivial single-column layout.
 pages[
   page(master:"default")[
@@ -9,3 +13,4 @@ pages[
     ]
   ]
 ]
+----

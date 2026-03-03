@@ -114,6 +114,26 @@ public final class DocumentRenderer {
             blocks = renderBlocks(docToRender.blocks, context: inlineContext)
         }
 
+        var templateDocument: XADTemplateDocument?
+        var templateWarnings: [AdocWarning] = []
+        var layoutProgram = config.xadLayoutProgram
+        if config.xadOptions.enabled, let templatePath = config.xadOptions.templatePath {
+            let templateURL = resolveTemplateURL(
+                templatePath,
+                relativeTo: sourceURL?.deletingLastPathComponent()
+            )
+            let ingestor = XADTemplateIngestor()
+            let (template, warnings) = ingestor.ingestTemplate(
+                at: templateURL,
+                xadOptions: config.xadOptions
+            )
+            templateDocument = template
+            templateWarnings.append(contentsOf: warnings)
+            if let program = template?.layoutProgram {
+                layoutProgram = program
+            }
+        }
+
         let indexResolver = IndexResolver()
         let indexCatalog = indexResolver.resolve(docToRender)
 
@@ -148,7 +168,8 @@ public final class DocumentRenderer {
             xadContext["collections"] = collectionContexts
 
             var warnings = slotExtraction.warnings
-            if let program = config.xadLayoutProgram {
+            warnings.append(contentsOf: templateWarnings)
+            if let program = layoutProgram {
                 let evaluator = XADLayoutEvaluator()
                 let evaluation = evaluator.evaluate(
                     program: program,
@@ -163,8 +184,17 @@ public final class DocumentRenderer {
                 xadContext["warnings"] = warnings.map { $0.message }
             }
         }
-        if let program = config.xadLayoutProgram {
+        if let program = layoutProgram {
             xadContext["layoutProgram"] = layoutProgramContext(program)
+        }
+        if let templateDocument {
+            xadContext["template"] = [
+                "path": templateDocument.url.path,
+                "attributes": templateDocument.attributes,
+                "typedAttributes": templateDocument.typedAttributes.mapValues { $0.toJSONCompatible() },
+                "css": templateDocument.assets.css,
+                "js": templateDocument.assets.js
+            ]
         }
 
         var context: [String: Any] = [
@@ -807,6 +837,11 @@ public final class DocumentRenderer {
         case .math(let m): return m.meta
         case .blockMacro(let m): return m.meta
         }
+    }
+
+    private func resolveTemplateURL(_ raw: String, relativeTo baseURL: URL?) -> URL {
+        let base = baseURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        return URL(fileURLWithPath: raw, relativeTo: base).standardizedFileURL
     }
 
     private func isPagedAttributeEnabled(document: AdocDocument) -> Bool {

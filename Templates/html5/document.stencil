@@ -6,6 +6,11 @@
     <title>{{ headerTitle }}</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/default.min.css">
     <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
+    {% if xad and xad.template and xad.template.css %}
+      {% for href in xad.template.css %}
+    <link rel="stylesheet" href="{{ href }}">
+      {% endfor %}
+    {% endif %}
     <style>
       :root {
         --surface: #ffffff;
@@ -556,6 +561,11 @@
   {% endif %}
 
       </div>
+    {% endif %}
+    {% if xad and xad.template and xad.template.js %}
+      {% for src in xad.template.js %}
+    <script src="{{ src }}"></script>
+      {% endfor %}
     {% endif %}
     {% if xad and xad.pagedJS %}
       <script src="https://unpkg.com/pagedjs/dist/paged.polyfill.js"></script>

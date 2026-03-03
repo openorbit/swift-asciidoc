@@ -48,8 +48,8 @@ public struct XADTemplateRegistry: Sendable {
                 guard (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
                     continue
                 }
-                let layoutURL = entry.appendingPathComponent("layout.xad")
-                if fileManager.fileExists(atPath: layoutURL.path) {
+                let templateURL = entry.appendingPathComponent("template.adoc")
+                if fileManager.fileExists(atPath: templateURL.path) {
                     names.insert(entry.lastPathComponent)
                 }
             }
@@ -77,44 +77,32 @@ public struct XADTemplateRegistry: Sendable {
         fileManager: FileManager = .default
     ) -> (XADTemplateDescriptor?, [AdocWarning]) {
         var warnings: [AdocWarning] = []
-        let layoutURL: URL
+        let templateURL: URL
         var name = templateName ?? url.deletingPathExtension().lastPathComponent
 
         if url.hasDirectoryPath {
-            layoutURL = url.appendingPathComponent("layout.xad")
+            templateURL = url.appendingPathComponent("template.adoc")
             name = url.lastPathComponent
         } else {
-            layoutURL = url
+            templateURL = url
         }
 
-        guard fileManager.fileExists(atPath: layoutURL.path) else {
-            warnings.append(AdocWarning(message: "layout.xad not found at \(layoutURL.path)", span: nil))
+        guard fileManager.fileExists(atPath: templateURL.path) else {
+            warnings.append(AdocWarning(message: "template.adoc not found at \(templateURL.path)", span: nil))
             return (nil, warnings)
         }
 
-        let data: Data
-        do {
-            data = try Data(contentsOf: layoutURL)
-        } catch {
-            warnings.append(AdocWarning(message: "failed to read template: \(error.localizedDescription)", span: nil))
-            return (nil, warnings)
-        }
-        guard let text = String(data: data, encoding: .utf8) else {
-            warnings.append(AdocWarning(message: "template must be UTF-8", span: nil))
-            return (nil, warnings)
-        }
+        let ingestor = XADTemplateIngestor()
+        let (templateDoc, ingestWarnings) = ingestor.ingestTemplate(at: templateURL)
+        warnings.append(contentsOf: ingestWarnings)
 
-        let parser = LayoutDSLParser()
-        let (program, parserWarnings) = parser.parse(text: text)
-        warnings.append(contentsOf: parserWarnings)
-
-        guard let program else {
+        guard let program = templateDoc?.layoutProgram else {
             warnings.append(AdocWarning(message: "template did not produce a layout program", span: nil))
             return (nil, warnings)
         }
 
-        let base = baseURL ?? layoutURL.deletingLastPathComponent()
-        let template = XADTemplateDescriptor(name: name, baseURL: base, layoutURL: layoutURL, program: program)
+        let base = baseURL ?? templateURL.deletingLastPathComponent()
+        let template = XADTemplateDescriptor(name: name, baseURL: base, layoutURL: templateURL, program: program)
         return (template, warnings)
     }
 
@@ -123,7 +111,7 @@ public struct XADTemplateRegistry: Sendable {
             let candidate = root
                 .appendingPathComponent("xad", isDirectory: true)
                 .appendingPathComponent(name, isDirectory: true)
-                .appendingPathComponent("layout.xad")
+                .appendingPathComponent("template.adoc")
             if fileManager.fileExists(atPath: candidate.path) {
                 return candidate
             }

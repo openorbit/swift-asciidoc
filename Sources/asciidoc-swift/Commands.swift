@@ -383,11 +383,13 @@ struct XadPagedHtml: AsyncParsableCommand {
             throw ValidationError("Unable to load XAD template: \(templateSelection)")
         }
 
+        let xadLayoutProgram = templateResult.0?.program
+        let templatePath = xadTemplate ?? templateResult.0?.layoutURL.path
         let xadOptions = makeXadOptions(
             enabled: true,
             pagedJS: true,
             strict: xadStrict,
-            templatePath: xadTemplate,
+            templatePath: templatePath,
             layoutTemplate: templateSelection,
             layoutTemplateBase: xadTemplateBase,
             layoutTemplateSearchPaths: xadTemplateSearchPath
@@ -401,7 +403,8 @@ struct XadPagedHtml: AsyncParsableCommand {
             attributeAssignments: attributeAssignments,
             outputPath: output,
             enabledExtensions: extensions,
-            xadOptions: xadOptions
+            xadOptions: xadOptions,
+            xadLayoutProgram: xadLayoutProgram
         )
     }
 }
@@ -889,7 +892,6 @@ private func renderDocument(
         config: RenderConfig(
             backend: backend,
             xadOptions: xadOptions,
-            xadLayoutProgram: xadLayoutProgram
         )
     )
     let rendered = try renderer.render(document: doc)

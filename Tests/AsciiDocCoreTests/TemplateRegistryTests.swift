@@ -11,15 +11,23 @@ struct XADTemplateRegistryTests {
         let templatesRoot = root.appendingPathComponent("Templates")
         let layoutDir = templatesRoot.appendingPathComponent("xad/default", isDirectory: true)
         try fileManager.createDirectory(at: layoutDir, withIntermediateDirectories: true)
-        let layoutURL = layoutDir.appendingPathComponent("layout.xad")
-        try "pages[]".write(to: layoutURL, atomically: true, encoding: .utf8)
+        let templateURL = layoutDir.appendingPathComponent("template.adoc")
+        let template = """
+        = Template
+        
+        [layout]
+        ----
+        pages[]
+        ----
+        """
+        try template.write(to: templateURL, atomically: true, encoding: .utf8)
         defer { try? fileManager.removeItem(at: root) }
 
         let registry = XADTemplateRegistry(searchPaths: [templatesRoot])
-        let (template, warnings) = registry.loadTemplate(named: "default")
+        let (loadedTemplate, warnings) = registry.loadTemplate(named: "default")
 
         #expect(warnings.isEmpty)
-        #expect(template != nil)
+        #expect(loadedTemplate != nil)
     }
 
     @Test
@@ -29,8 +37,16 @@ struct XADTemplateRegistryTests {
         let templatesRoot = root.appendingPathComponent("Templates")
         let layoutDir = templatesRoot.appendingPathComponent("xad/demo", isDirectory: true)
         try fileManager.createDirectory(at: layoutDir, withIntermediateDirectories: true)
-        let layoutURL = layoutDir.appendingPathComponent("layout.xad")
-        try "pages[]".write(to: layoutURL, atomically: true, encoding: .utf8)
+        let templateURL = layoutDir.appendingPathComponent("template.adoc")
+        let template = """
+        = Template
+        
+        [layout]
+        ----
+        pages[]
+        ----
+        """
+        try template.write(to: templateURL, atomically: true, encoding: .utf8)
         defer { try? fileManager.removeItem(at: root) }
 
         let registry = XADTemplateRegistry(searchPaths: [templatesRoot])

@@ -1,3 +1,7 @@
+= Double Column Template
+
+[layout]
+----
 // Double-column layout with a header stack.
 pages[
   page(master:"default")[
@@ -13,3 +17,4 @@ pages[
     ]
   ]
 ]
+----
