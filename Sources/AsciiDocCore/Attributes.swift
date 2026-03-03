@@ -476,6 +476,11 @@ package extension AdocText {
     }
 }
 
+private func expandRawText(_ text: AdocText, using env: AttrEnv) -> AdocText {
+    let expanded = env.expand(text.plain)
+    return AdocText(inlines: [.text(expanded, span: text.span)], span: text.span)
+}
+
 package extension AdocParagraph {
     func applyingAttributes(using env: AttrEnv) -> AdocParagraph {
         var copy = self
@@ -490,7 +495,7 @@ package extension AdocParagraph {
 package extension AdocListing {
     func applyingAttributes(using env: AttrEnv) -> AdocListing {
         var copy = self
-        copy.text = copy.text.applyingAttributes(using: env)
+        copy.text = expandRawText(copy.text, using: env)
         if let t = copy.title { copy.title = t.applyingAttributes(using: env) }
         if let r = copy.reftext { copy.reftext = r.applyingAttributes(using: env) }
         return copy
@@ -591,7 +596,7 @@ package extension AdocBlock {
             return .verse(vv)
         case .literalBlock(let lb):
             var ll = lb
-            ll.text = ll.text.applyingAttributes(using: env)
+            ll.text = expandRawText(ll.text, using: env)
             if let t = ll.title { ll.title = t.applyingAttributes(using: env) }
             if let r = ll.reftext { ll.reftext = r.applyingAttributes(using: env) }
             return .literalBlock(ll)
