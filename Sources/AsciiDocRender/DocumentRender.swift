@@ -130,10 +130,11 @@ public final class DocumentRenderer {
         }
 
         let typedAttributes = docToRender.typedAttributes.mapValues { $0.toJSONCompatible() }
+        let pagedEnabled = config.xadOptions.pagedJS || isPagedAttributeEnabled(document: docToRender)
         var xadContext: [String: Any] = [
             "enabled": config.xadOptions.enabled,
             "strict": config.xadOptions.strict,
-            "pagedJS": config.xadOptions.pagedJS,
+            "pagedJS": pagedEnabled,
             "templatePath": config.xadOptions.templatePath ?? "",
             "layoutTemplate": config.xadOptions.layoutTemplate ?? "",
             "layoutTemplateBase": config.xadOptions.layoutTemplateBase ?? "",
@@ -805,6 +806,47 @@ public final class DocumentRenderer {
         case .table(let t): return t.meta
         case .math(let m): return m.meta
         case .blockMacro(let m): return m.meta
+        }
+    }
+
+    private func isPagedAttributeEnabled(document: AdocDocument) -> Bool {
+        if let typed = document.typedAttributes["paged"] {
+            return isTruthy(typed)
+        }
+        if let raw = document.attributes["paged"] {
+            return isTruthy(raw)
+        }
+        return false
+    }
+
+    private func isTruthy(_ value: XADAttributeValue) -> Bool {
+        switch value {
+        case .bool(let b):
+            return b
+        case .number(let n):
+            return n != 0
+        case .string(let s):
+            return isTruthy(s)
+        case .null:
+            return false
+        case .array(let arr):
+            return !arr.isEmpty
+        case .dictionary(let dict):
+            return !dict.isEmpty
+        }
+    }
+
+    private func isTruthy(_ value: String?) -> Bool {
+        guard let value else { return false }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return true }
+        switch trimmed.lowercased() {
+        case "true", "yes", "on", "1":
+            return true
+        case "false", "no", "off", "0":
+            return false
+        default:
+            return true
         }
     }
 
