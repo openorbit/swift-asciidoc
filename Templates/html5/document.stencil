@@ -12,6 +12,10 @@
       {% endfor %}
     {% endif %}
     <style>
+      {% if xad and xad.template and xad.template.pageCSS %}
+      {{ xad.template.pageCSS }}
+      {% endif %}
+
       :root {
         --surface: #ffffff;
         --surface-muted: #f6f7fb;

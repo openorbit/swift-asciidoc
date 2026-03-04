@@ -99,10 +99,7 @@ public final class DocumentRenderer {
         let slotExtraction: SlotExtractionResult
         let blocks: [[String: Any]]
         if config.xadOptions.enabled {
-            slotExtraction = extractSlotsAndCollections(
-                from: docToRender.blocks,
-                attributes: docToRender.attributes
-            )
+            slotExtraction = extractSlotsAndCollections(from: docToRender)
             blocks = renderBlocks(slotExtraction.mainBlocks, context: inlineContext)
         } else {
             slotExtraction = SlotExtractionResult(
@@ -188,13 +185,17 @@ public final class DocumentRenderer {
             xadContext["layoutProgram"] = layoutProgramContext(program)
         }
         if let templateDocument {
-            xadContext["template"] = [
+            var templateContext: [String: Any] = [
                 "path": templateDocument.url.path,
                 "attributes": templateDocument.attributes,
                 "typedAttributes": templateDocument.typedAttributes.mapValues { $0.toJSONCompatible() },
                 "css": templateDocument.assets.css,
                 "js": templateDocument.assets.js
             ]
+            if let pageCSS = pageCSS(from: templateDocument) {
+                templateContext["pageCSS"] = pageCSS
+            }
+            xadContext["template"] = templateContext
         }
 
         var context: [String: Any] = [
@@ -669,10 +670,7 @@ public final class DocumentRenderer {
         return rendered
     }
 
-    private func extractSlotsAndCollections(
-        from blocks: [AdocBlock],
-        attributes: [String: String?]
-    ) -> SlotExtractionResult {
+    private func extractSlotsAndCollections(from document: AdocDocument) -> SlotExtractionResult {
         var slots: [String: [SlotItem]] = [:]
         var collections: [String: [SlotItem]] = [:]
         var warnings: [AdocWarning] = []
@@ -680,7 +678,7 @@ public final class DocumentRenderer {
         var index = 0
 
         func attributeValue(_ name: String) -> String? {
-            guard let value = attributes[name] else { return nil }
+            guard let value = document.attributes[name] else { return nil }
             return value ?? ""
         }
 
@@ -731,6 +729,26 @@ public final class DocumentRenderer {
             collections[name, default: []].append(SlotItem(block: block, order: order, index: index))
         }
 
+        func isAbstractBlock(_ meta: AdocBlockMeta) -> Bool {
+            if let style = meta.attributes["style"], style.lowercased() == "abstract" {
+                return true
+            }
+            return meta.roles.contains { $0.lowercased() == "abstract" }
+        }
+
+        func isBibliographyBlock(_ meta: AdocBlockMeta) -> Bool {
+            if let style = meta.attributes["style"], style.lowercased() == "bibliography" {
+                return true
+            }
+            return meta.roles.contains { $0.lowercased() == "bibliography" }
+        }
+
+        func inferredSlotName(for meta: AdocBlockMeta) -> String? {
+            if isAbstractBlock(meta) { return "abstract" }
+            if isBibliographyBlock(meta) { return "bibliography" }
+            return nil
+        }
+
         func extractBlocks(_ blocks: [AdocBlock]) -> [AdocBlock] {
             var out: [AdocBlock] = []
             for block in blocks {
@@ -745,7 +763,8 @@ public final class DocumentRenderer {
             let meta = blockMeta(block)
             let slotName = normalizedName(meta.attributes["slot"])
             let collectionName = normalizedName(meta.attributes["collect"])
-            let orderContext = slotName ?? collectionName ?? "main"
+            let inferredSlot = slotName == nil && collectionName == nil ? inferredSlotName(for: meta) : nil
+            let orderContext = slotName ?? collectionName ?? inferredSlot ?? "main"
             let order = parseOrder(meta.attributes["order"], context: orderContext, span: meta.span)
             index += 1
             let currentIndex = index
@@ -754,7 +773,7 @@ public final class DocumentRenderer {
                 addCollection(collectionName, block: block, order: order, index: currentIndex)
             }
 
-            let effectiveSlot = slotName ?? "main"
+            let effectiveSlot = slotName ?? inferredSlot ?? "main"
             if effectiveSlot != "main" {
                 addSlot(effectiveSlot, block: block, order: order, index: currentIndex)
             }
@@ -764,7 +783,7 @@ public final class DocumentRenderer {
                 return nil
             }
 
-            if slotName != nil || collectionName != nil {
+            if slotName != nil || collectionName != nil || inferredSlot != nil {
                 return block
             }
 
@@ -809,7 +828,40 @@ public final class DocumentRenderer {
             }
         }
 
-        let mainBlocks = extractBlocks(blocks)
+        func makeParagraph(_ text: String, roles: [String]) -> AdocParagraph {
+            var meta = AdocBlockMeta()
+            meta.roles = roles
+            return AdocParagraph(text: AdocText(plain: text), meta: meta)
+        }
+
+        func addHeaderSlotsIfMissing() {
+            if (slots["title"]?.isEmpty ?? true),
+               let titleText = document.header?.title?.plain ?? attributeValue("doctitle"),
+               !titleText.isEmpty {
+                index += 1
+                let titlePara = makeParagraph(titleText, roles: ["doc-title"])
+                addSlot("title", block: .paragraph(titlePara), order: 0, index: index)
+            }
+
+            if (slots["authors"]?.isEmpty ?? true) {
+                if let headerAuthors = document.header?.authors, !headerAuthors.isEmpty {
+                    for author in headerAuthors {
+                        let text = formatAuthor(author)
+                        if text.isEmpty { continue }
+                        index += 1
+                        let authorPara = makeParagraph(text, roles: ["author"])
+                        addSlot("authors", block: .paragraph(authorPara), order: 0, index: index)
+                    }
+                } else if let raw = attributeValue("author"), !raw.isEmpty {
+                    index += 1
+                    let authorPara = makeParagraph(raw, roles: ["author"])
+                    addSlot("authors", block: .paragraph(authorPara), order: 0, index: index)
+                }
+            }
+        }
+
+        let mainBlocks = extractBlocks(document.blocks)
+        addHeaderSlotsIfMissing()
         return SlotExtractionResult(
             mainBlocks: mainBlocks,
             slots: slots,
@@ -852,6 +904,67 @@ public final class DocumentRenderer {
             return isTruthy(raw)
         }
         return false
+    }
+
+    private func pageCSS(from template: XADTemplateDocument) -> String? {
+        guard let mastersValue = template.typedAttributes["page.masters"] else { return nil }
+        guard case .dictionary(let masters) = mastersValue else { return nil }
+        guard case .dictionary(let defaultMaster) = masters["default"] else { return nil }
+
+        let size: String?
+        if case .string(let rawSize)? = defaultMaster["size"] {
+            size = rawSize
+        } else {
+            size = nil
+        }
+
+        var marginParts: [String] = []
+        if case .dictionary(let margins)? = defaultMaster["margins"] {
+            let top = stringValue(margins["top"])
+            let right = stringValue(margins["right"]) ?? stringValue(margins["outer"])
+            let bottom = stringValue(margins["bottom"])
+            let left = stringValue(margins["left"]) ?? stringValue(margins["inner"])
+            if let top, let right, let bottom, let left {
+                marginParts = [top, right, bottom, left]
+            }
+        }
+
+        guard size != nil || !marginParts.isEmpty else { return nil }
+        var lines: [String] = ["@page {"]
+        if let size {
+            lines.append("  size: \(size);")
+        }
+        if !marginParts.isEmpty {
+            lines.append("  margin: \(marginParts.joined(separator: " "));")
+        }
+        lines.append("}")
+        return lines.joined(separator: "\n")
+    }
+
+    private func formatAuthor(_ author: AdocAuthor) -> String {
+        if let fullname = author.fullname, !fullname.isEmpty {
+            return appendAddress(fullname, address: author.address)
+        }
+        let parts = [author.firstname, author.middlename, author.lastname].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        if !parts.isEmpty {
+            return appendAddress(parts.joined(separator: " "), address: author.address)
+        }
+        if let initials = author.initials, !initials.isEmpty {
+            return appendAddress(initials, address: author.address)
+        }
+        return ""
+    }
+
+    private func appendAddress(_ name: String, address: String?) -> String {
+        guard let address, !address.isEmpty else { return name }
+        return "\(name) <\(address)>"
+    }
+
+    private func stringValue(_ value: XADAttributeValue?) -> String? {
+        if case .string(let raw)? = value {
+            return raw
+        }
+        return nil
     }
 
     private func isTruthy(_ value: XADAttributeValue) -> Bool {

@@ -2,13 +2,7 @@
 Author Example <author@example.com>
 :revdate: 2026-03-02
 
-[slot=title]
-Trivial Layout Example
-
-[slot=authors]
-Author Example
-
-[slot=abstract]
+[abstract]
 This is a short abstract describing the trivial single-column layout.
 
 == Introduction

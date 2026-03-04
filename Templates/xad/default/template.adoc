@@ -1,4 +1,5 @@
 = Default Template
+:page.masters: {"default": {"size": "A4", "margins": {"top": "18mm", "right": "18mm", "bottom": "20mm", "left": "18mm"}, "duplex": false}}
 
 [layout]
 ----
