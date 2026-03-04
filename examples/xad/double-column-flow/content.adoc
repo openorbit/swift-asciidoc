@@ -1,0 +1,33 @@
+= Double Column Flow Example
+Author Example <author@example.com>
+:revdate: 2026-03-02
+
+[slot=title]
+Double Column Flow Example
+
+[slot=authors]
+Author Example
+
+[slot=abstract]
+This abstract sits above a two-column flow where content flows across columns.
+
+== Introduction
+
+[slot=main]
+This opening section introduces the main flow. It should start in the left column
+and continue into the right column as needed.
+
+[slot=main]
+A second paragraph to build enough content for column flow. Lorem ipsum dolor sit amet,
+consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+
+== Details
+
+[slot=main]
+This section continues in the same slot so it participates in the column flow. Use it to
+verify that headings and paragraphs stay within the two-column area.
+
+[slot=main]
+- First item in the flowing column list.
+- Second item in the flowing column list.
+- Third item in the flowing column list.

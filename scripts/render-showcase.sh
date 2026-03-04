@@ -44,7 +44,8 @@ render_xad_example() {
 }
 
 render_xad_example trivial trivial
-render_xad_example double-column double-column
+render_xad_example double-column-explicit double-column-explicit
+render_xad_example double-column-flow double-column-flow
 
 convert_docbook_pdf() {
   local xml="${OUTPUT_DIR}/showcase.xml"

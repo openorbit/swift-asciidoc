@@ -1,4 +1,4 @@
-= Double Column Template
+= Double Column Explicit Template
 
 [layout]
 ----

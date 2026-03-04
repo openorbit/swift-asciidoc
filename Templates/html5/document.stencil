@@ -116,6 +116,16 @@
         background: linear-gradient(135deg, var(--surface), var(--surface-muted));
       }
 
+      .xad-area[data-area="columns"] {
+        column-count: 2;
+        column-gap: 2rem;
+        column-rule: 1px solid var(--border-soft);
+      }
+
+      .xad-area[data-area="columns"] > * {
+        break-inside: avoid;
+      }
+
       .xad-sink {
         padding: 1rem;
         border: 1px dashed var(--border-soft);

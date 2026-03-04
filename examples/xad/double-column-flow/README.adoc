@@ -1,0 +1,9 @@
+= Double Column Flow Template Example
+
+This example pairs `content.adoc` with the `Templates/xad/double-column-flow` layout.
+
+To render:
+
+----
+asciidoc-swift xad-paged-html --xad-layout-template double-column-flow examples/xad/double-column-flow/content.adoc
+----
