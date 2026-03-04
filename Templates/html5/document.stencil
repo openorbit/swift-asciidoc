@@ -85,8 +85,27 @@
         gap: 1.5rem;
       }
 
+      .xad-page {
+        background: var(--surface);
+        border: 1px solid var(--border-soft);
+        border-radius: 20px;
+        padding: 2rem;
+        min-height: 11in;
+        box-shadow: var(--shadow-soft);
+      }
+
+      .xad-stack {
+        display: grid;
+        gap: 1.5rem;
+      }
+
+      .xad-flow {
+        min-width: 0;
+      }
+
       .xad-grid {
         display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
         gap: 1.5rem;
       }
 
@@ -454,6 +473,28 @@
         border: 1px dashed var(--border-soft);
         border-radius: 14px;
         background: var(--surface-muted);
+      }
+
+      @media print {
+        body {
+          background: #ffffff;
+          padding: 0;
+        }
+
+        .xad-doc {
+          width: auto;
+          margin: 0;
+          padding: 0;
+          box-shadow: none;
+          border-radius: 0;
+        }
+
+        .xad-page {
+          box-shadow: none;
+          border: none;
+          border-radius: 0;
+          page-break-after: always;
+        }
       }
 
       /* Footnotes */
