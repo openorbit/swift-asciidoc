@@ -195,6 +195,9 @@ public final class DocumentRenderer {
             if let pageCSS = pageCSS(from: templateDocument) {
                 templateContext["pageCSS"] = pageCSS
             }
+            if let styleCSS = styleCSS(from: templateDocument) {
+                templateContext["styleCSS"] = styleCSS
+            }
             xadContext["template"] = templateContext
         }
 
@@ -937,6 +940,38 @@ public final class DocumentRenderer {
         if !marginParts.isEmpty {
             lines.append("  margin: \(marginParts.joined(separator: " "));")
         }
+        lines.append("}")
+        return lines.joined(separator: "\n")
+    }
+
+    private func styleCSS(from template: XADTemplateDocument) -> String? {
+        guard let styleValue = template.typedAttributes["style"] else { return nil }
+        guard case .dictionary(let style) = styleValue else { return nil }
+
+        var lines: [String] = [":root {"]
+
+        if case .dictionary(let font)? = style["font"] {
+            if let body = stringValue(font["body"]) { lines.append("  --xad-font-body: \"\(body)\";") }
+            if let heading = stringValue(font["heading"]) { lines.append("  --xad-font-heading: \"\(heading)\";") }
+            if let mono = stringValue(font["mono"]) { lines.append("  --xad-font-mono: \"\(mono)\";") }
+        }
+
+        if case .dictionary(let size)? = style["size"] {
+            if let body = stringValue(size["body"]) { lines.append("  --xad-size-body: \(body);") }
+            if let h1 = stringValue(size["h1"]) { lines.append("  --xad-size-h1: \(h1);") }
+            if let h2 = stringValue(size["h2"]) { lines.append("  --xad-size-h2: \(h2);") }
+        }
+
+        if case .dictionary(let line)? = style["line"] {
+            if let leading = stringValue(line["leading"]) { lines.append("  --xad-line-leading: \(leading);") }
+        }
+
+        if case .dictionary(let color)? = style["color"] {
+            if let text = stringValue(color["text"]) { lines.append("  --xad-color-text: \(text);") }
+            if let muted = stringValue(color["muted"]) { lines.append("  --xad-color-muted: \(muted);") }
+        }
+
+        guard lines.count > 1 else { return nil }
         lines.append("}")
         return lines.joined(separator: "\n")
     }

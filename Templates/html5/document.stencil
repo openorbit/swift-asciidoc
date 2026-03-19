@@ -15,6 +15,9 @@
       {% if xad and xad.template and xad.template.pageCSS %}
       {{ xad.template.pageCSS }}
       {% endif %}
+      {% if xad and xad.template and xad.template.styleCSS %}
+      {{ xad.template.styleCSS }}
+      {% endif %}
 
       :root {
         --surface: #ffffff;
@@ -27,6 +30,15 @@
         --accent-soft: rgba(37, 99, 235, 0.1);
         --shadow-soft: 0 10px 25px rgba(15, 23, 42, 0.08);
         --monospace: "SFMono-Regular", "Roboto Mono", ui-monospace, Menlo, Monaco, "Liberation Mono", monospace;
+        --xad-font-body: "Times New Roman";
+        --xad-font-heading: "Times New Roman";
+        --xad-font-mono: "SFMono-Regular", "Roboto Mono", ui-monospace, Menlo, Monaco, "Liberation Mono", monospace;
+        --xad-size-body: 11pt;
+        --xad-size-h1: 20pt;
+        --xad-size-h2: 14pt;
+        --xad-line-leading: 1.35;
+        --xad-color-text: #111827;
+        --xad-color-muted: #4b5563;
       }
 
       @media (prefers-color-scheme: dark) {
@@ -56,6 +68,20 @@
         font-size: 16px;
         line-height: 1.65;
       }
+
+      .xad-doc {
+        font-family: var(--xad-font-body, "Times New Roman");
+        font-size: var(--xad-size-body, 11pt);
+        line-height: var(--xad-line-leading, 1.35);
+        color: var(--xad-color-text, #111827);
+      }
+
+      .xad-doc h1, .xad-doc h2, .xad-doc h3, .xad-doc h4, .xad-doc h5, .xad-doc h6 {
+        font-family: var(--xad-font-heading, "Times New Roman");
+      }
+
+      .xad-doc h1 { font-size: var(--xad-size-h1, 20pt); }
+      .xad-doc h2 { font-size: var(--xad-size-h2, 14pt); }
 
       a {
         color: var(--accent);
@@ -105,6 +131,30 @@
 
       .xad-flow {
         min-width: 0;
+      }
+
+      .xad-flow[data-slot="title"] .doc-title p {
+        font-family: var(--xad-font-heading, "Times New Roman");
+        font-size: var(--xad-size-h1, 2.2rem);
+        font-weight: 700;
+        line-height: 1.1;
+        margin: 0;
+      }
+
+      .xad-flow[data-slot="authors"] .author p {
+        margin: 0.25rem 0;
+        color: var(--xad-color-muted, #4b5563);
+      }
+
+      .xad-flow[data-slot="abstract"] .block.paragraph {
+        background: var(--surface-muted);
+        border: 1px solid var(--border-soft);
+        border-radius: 12px;
+        padding: 1rem 1.25rem;
+      }
+
+      .xad-flow[data-slot="abstract"] .block.paragraph p {
+        margin: 0;
       }
 
       .xad-grid {
