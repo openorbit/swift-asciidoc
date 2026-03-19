@@ -951,6 +951,7 @@
             const entries = [];
             let minPositiveFret;
             let maxFret = 0;
+            let hasOpenStrings = false;
 
             values.forEach(function(value, index) {
               const stringNumber = stringCount - index;
@@ -967,6 +968,7 @@
               }
 
               if (fret === 0) {
+                hasOpenStrings = true;
                 entries.push([stringNumber, 0]);
                 return;
               }
@@ -985,7 +987,8 @@
             return {
               entries: entries,
               minPositiveFret: minPositiveFret,
-              maxFret: maxFret
+              maxFret: maxFret,
+              hasOpenStrings: hasOpenStrings
             };
           }
 
@@ -1015,10 +1018,15 @@
 
             const parsedFingers = parseFingerEntries(fretValues.slice(0, strings), fingerValues, strings);
             const explicitPosition = parseNumber(block.dataset.position);
-            const position = explicitPosition || ((parsedFingers.minPositiveFret && parsedFingers.minPositiveFret > 1) ? parsedFingers.minPositiveFret : 1);
+            const position = explicitPosition || ((!parsedFingers.hasOpenStrings && parsedFingers.minPositiveFret && parsedFingers.minPositiveFret > 1) ? parsedFingers.minPositiveFret : 1);
             const fretCount = Math.max(4, parsedFingers.maxFret > 0 ? (parsedFingers.maxFret - position + 2) : 4);
             const barreSpec = parseList(block.dataset.barre);
             const barres = [];
+            const chordOptions = {
+              title: label,
+              fingers: parsedFingers.entries,
+              barres: barres
+            };
 
             if (barreSpec.length >= 3) {
               const fret = Number(barreSpec[0]);
@@ -1040,21 +1048,24 @@
             try {
               new svguitar.SVGuitarChord('#' + container.id)
                 .configure({
+                  style: 'normal',
                   strings: strings,
                   tuning: tuning.length ? tuning : defaults.tuning,
                   frets: fretCount,
                   position: position,
-                  fixedDiagramPosition: true,
-                  fingerSize: 0.65,
-                  fretSize: 1.4,
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, monospace'
-                })
-                .chord({
                   title: label,
-                  position: position,
-                  fingers: parsedFingers.entries,
-                  barres: barres
+                  titleBottomMargin: 8,
+                  tuningsFontSize: 18,
+                  titleFontSize: 28,
+                  fingerTextSize: 16,
+                  strokeWidth: 1.5,
+                  nutWidth: 8,
+                  backgroundColor: 'none'
                 })
+                .chord((function() {
+                  chordOptions.position = position;
+                  return chordOptions;
+                })())
                 .draw();
             } catch (error) {
               container.textContent = chordName;
