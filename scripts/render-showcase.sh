@@ -17,6 +17,8 @@ render() {
   local outfile="${OUTPUT_DIR}/showcase.${extension}"
   echo "→ Rendering ${backend} to ${outfile}"
   swift run -q asciidoc-swift "${backend}" \
+    --extension score \
+    --extension lyrics \
     --template "${TEMPLATE_ROOT}" \
     --output "${outfile}" \
     "${DOC_PATH}"

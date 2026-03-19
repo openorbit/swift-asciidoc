@@ -955,6 +955,14 @@ private func registerExtensions(
         extensionHost.register(latexExtension)
     }
 
+    if let scoreExtension = makeScoreExtension(enabledExtensions: enabledExtensions) {
+        extensionHost.register(scoreExtension)
+    }
+
+    if let lyricsExtension = makeLyricsExtension(enabledExtensions: enabledExtensions) {
+        extensionHost.register(lyricsExtension)
+    }
+
     if xadOptions.enabled {
         extensionHost.register(XADExtension())
     }
@@ -996,4 +1004,18 @@ private func makeLatexExtension(enabledExtensions: [String]) -> LatexEnvironment
         return nil
     }
     return LatexEnvironmentExtension()
+}
+
+private func makeScoreExtension(enabledExtensions: [String]) -> ScoreExtension? {
+    guard extensionRequested("score", in: enabledExtensions) else {
+        return nil
+    }
+    return ScoreExtension()
+}
+
+private func makeLyricsExtension(enabledExtensions: [String]) -> LyricsExtension? {
+    guard extensionRequested("lyrics", in: enabledExtensions) else {
+        return nil
+    }
+    return LyricsExtension()
 }

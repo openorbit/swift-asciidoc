@@ -4,7 +4,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ headerTitle }}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/abcjs@6.4.3/abcjs-audio.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/default.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/abcjs@6.4.3/dist/abcjs-basic-min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
     {% if xad and xad.template and xad.template.css %}
       {% for href in xad.template.css %}
@@ -539,6 +541,112 @@
         background: var(--surface-muted);
       }
 
+      .score-block {
+        padding: 1.25rem;
+        border: 1px solid var(--border-soft);
+        border-radius: 18px;
+        background: linear-gradient(180deg, var(--surface), var(--surface-muted));
+      }
+
+      .score-notation {
+        overflow-x: auto;
+      }
+
+      .score-notation svg {
+        display: block;
+        max-width: 100%;
+        height: auto;
+      }
+
+      .score-audio {
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border-soft);
+      }
+
+      .score-source {
+        display: none;
+      }
+
+      .lyrics-block {
+        padding: 1.25rem 1.4rem;
+        border: 1px solid var(--border-soft);
+        border-radius: 18px;
+        background: linear-gradient(180deg, var(--surface), var(--surface-muted));
+        margin: 1rem 0;
+      }
+
+      .lyrics-part {
+        margin: 0 0 0.9rem;
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .lyrics-body {
+        display: block;
+        margin: 0;
+        padding: 0;
+      }
+
+      .lyrics-line {
+        display: block;
+        font-family: var(--monospace);
+        font-size: 1rem;
+        line-height: 1;
+        margin: 0 0 0.05rem;
+        padding: 0;
+      }
+
+      .lyrics-line:last-child {
+        margin-bottom: 0;
+      }
+
+      .lyrics-text-row {
+        display: block;
+        font-family: inherit;
+        font-size: 1em;
+        line-height: 1;
+        margin: 0;
+        padding: 0;
+      }
+
+      .lyrics-chord-row {
+        display: block;
+        font-family: inherit;
+        color: var(--accent);
+        font-weight: 600;
+        font-size: 1em;
+        line-height: 1;
+        letter-spacing: 0;
+        font-kerning: none;
+        font-variant-ligatures: none;
+        margin: 0 0 0.05rem;
+        padding: 0;
+      }
+
+      .lyrics-chord-text {
+        display: block;
+        font-family: inherit;
+        font-size: 1em;
+        line-height: 1;
+        white-space: pre;
+        margin: 0;
+        padding: 0;
+      }
+
+      .lyrics-text {
+        display: block;
+        font-family: inherit;
+        font-size: 1em;
+        line-height: 1;
+        white-space: pre;
+        margin: 0;
+        padding: 0;
+      }
+
       @media print {
         body {
           background: #ffffff;
@@ -676,6 +784,96 @@
       <script src="https://unpkg.com/pagedjs/dist/paged.polyfill.js"></script>
     {% endif %}
     <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/highlight.min.js"></script>
-    <script>document.addEventListener("DOMContentLoaded",function(){window.hljs&&window.hljs.highlightAll();});</script>
+    <script>
+      document.addEventListener("DOMContentLoaded", function() {
+        window.hljs && window.hljs.highlightAll();
+
+        if (typeof ABCJS === "undefined") {
+          return;
+        }
+
+        function toBoolean(value) {
+          if (!value) {
+            return false;
+          }
+          const normalized = String(value).toLowerCase();
+          return normalized === "true" || normalized === "1" || normalized === "yes";
+        }
+
+        document.querySelectorAll(".score-block").forEach(function(block) {
+          const sourceNode = block.querySelector("[data-score-source]");
+          const notationNode = block.querySelector("[data-score-notation]");
+          if (!sourceNode || !notationNode) {
+            return;
+          }
+
+          const abc = sourceNode.textContent || "";
+          if (!abc.trim()) {
+            return;
+          }
+
+          const tabsEnabled = toBoolean(block.dataset.tabs);
+          const audioEnabled = toBoolean(block.dataset.audio);
+          const instrument = block.dataset.instrument || "guitar";
+          const tuning = block.dataset.tuning || "";
+          const capoValue = block.dataset.capo || "";
+          const capo = capoValue === "" ? undefined : Number(capoValue);
+          const visualOptions = {
+            responsive: "resize"
+          };
+
+          if (tabsEnabled) {
+            const tablature = {
+              instrument: instrument
+            };
+            if (tuning) {
+              tablature.tuning = tuning;
+            }
+            if (capo !== undefined && !Number.isNaN(capo)) {
+              tablature.capo = capo;
+            }
+            visualOptions.tablature = [tablature];
+          }
+
+          let visualObj;
+          try {
+            visualObj = ABCJS.renderAbc(notationNode, abc, visualOptions);
+          } catch (error) {
+            notationNode.textContent = abc;
+            return;
+          }
+
+          if (!audioEnabled || !visualObj || !visualObj.length || !ABCJS.synth) {
+            return;
+          }
+
+          const audioNode = block.querySelector("[data-score-audio]");
+          if (!audioNode) {
+            return;
+          }
+
+          audioNode.hidden = false;
+
+          const synthControl = new ABCJS.synth.SynthController();
+          synthControl.load(audioNode, null, {
+            displayLoop: true,
+            displayRestart: true,
+            displayPlay: true,
+            displayProgress: true,
+            displayWarp: true
+          });
+
+          const synth = new ABCJS.synth.CreateSynth();
+          synth.init({ visualObj: visualObj[0] }).then(function() {
+            synthControl.setTune(visualObj[0], false, {
+              audioContext: synth.audioContext,
+              synthObject: synth
+            });
+          }).catch(function() {
+            audioNode.hidden = true;
+          });
+        });
+      });
+    </script>
   </body>
 </html>

@@ -100,6 +100,26 @@ Renderer -> User : HTML / DocBook / LaTeX
 @enduml
 ----
 
+== Score
+
+[score,tabs,audio,instrument=guitar]
+----
+X:1
+T:Scale Fragment
+M:4/4
+L:1/4
+K:C
+C D E F | G A B c |
+----
+
+== Lyrics
+
+[lyrics,chords,part=verse]
+----
+[G]Amazing [C]grace, how [G]sweet the sound
+That [G]saved a [D]wretch li[Cm]ke [G]me
+----
+
 == Inline Math
 
 Rendered inline math works too: stem:[x^2 + y^2 = z^2].footnote:[This is the Pythagorean theorem.]

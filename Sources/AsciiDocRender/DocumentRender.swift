@@ -532,6 +532,26 @@ public final class DocumentRenderer {
 
         case .blockMacro(let m):
             let altText = m.meta.attributes["alt"] ?? m.meta.attributes["1"] ?? m.title?.plain ?? ""
+            if m.name == "lyrics" {
+                let lyrics = parseLyrics(target: m.target ?? "", chordsEnabled: isTruthy(m.meta.attributes["chords"]))
+                return [
+                    "kind": "blockMacro",
+                    "name": m.name,
+                    "target": m.target ?? "",
+                    "titleHTML": m.title.map { renderInlines($0.inlines, context: context) } ?? "",
+                    "titlePlain": m.title?.plain ?? "",
+                    "altText": altText,
+                    "attributes": m.meta.attributes,
+                    "options": Array(m.meta.options),
+                    "roles": m.meta.roles,
+                    "roleClass": m.meta.roles.joined(separator: " "),
+                    "id": blockIdentifier(m.id, meta: m.meta),
+                    "meta": metaContext(m.meta),
+                    "lines": lyrics.lines,
+                    "hasChords": lyrics.hasChords,
+                    "part": m.meta.attributes["part"] ?? ""
+                ]
+            }
             return [
                 "kind": "blockMacro",
                 "name": m.name,
@@ -1113,6 +1133,99 @@ public final class DocumentRenderer {
             "roleClass": meta.roles.joined(separator: " "),
             "id": meta.id ?? ""
         ]
+    }
+
+    private func parseLyrics(target: String, chordsEnabled: Bool) -> (lines: [[String: Any]], hasChords: Bool) {
+        let sourceLines = target.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        var renderedLines: [[String: Any]] = []
+        var hasChords = false
+
+        for line in sourceLines {
+            if !chordsEnabled {
+                renderedLines.append([
+                    "text": line,
+                    "chordLine": ""
+                ])
+                continue
+            }
+
+            let parsedLine = parseLyricsLine(line)
+            if let chordLine = parsedLine["chordLine"] as? String, !chordLine.trimmingCharacters(in: .whitespaces).isEmpty {
+                hasChords = true
+            }
+            renderedLines.append(parsedLine)
+        }
+
+        return (renderedLines, hasChords)
+    }
+
+    private func parseLyricsLine(_ line: String) -> [String: Any] {
+        var text = ""
+        var chords: [[String: Any]] = []
+        var index = line.startIndex
+
+        while index < line.endIndex {
+            if line[index] == "[" {
+                let next = line.index(after: index)
+                if let close = line[next...].firstIndex(of: "]") {
+                    let chord = String(line[next..<close])
+                    chords.append([
+                        "name": chord,
+                        "column": text.count
+                    ])
+                    index = line.index(after: close)
+                    continue
+                }
+            }
+
+            text.append(line[index])
+            index = line.index(after: index)
+        }
+
+        return [
+            "text": text,
+            "chordLine": buildChordLine(chords: chords)
+        ]
+    }
+
+    private func buildChordLine(chords: [[String: Any]]) -> String {
+        guard !chords.isEmpty else {
+            return ""
+        }
+
+        var characters: [Character] = []
+        var nextFreeColumn = 0
+
+        func ensureCapacity(_ count: Int) {
+            if characters.count < count {
+                characters.append(contentsOf: Array(repeating: " ", count: count - characters.count))
+            }
+        }
+
+        for chord in chords {
+            guard
+                let name = chord["name"] as? String,
+                let requestedColumn = chord["column"] as? Int
+            else {
+                continue
+            }
+
+            let startColumn = max(requestedColumn, nextFreeColumn)
+            let chordCharacters = Array(name)
+            ensureCapacity(startColumn + chordCharacters.count)
+
+            for (offset, character) in chordCharacters.enumerated() {
+                characters[startColumn + offset] = character
+            }
+
+            nextFreeColumn = startColumn + chordCharacters.count + 1
+        }
+
+        while let last = characters.last, last == " " {
+            characters.removeLast()
+        }
+
+        return String(characters)
     }
 
     private func makeCalloutBundle(for items: [AdocListItem]) -> CalloutBundle? {

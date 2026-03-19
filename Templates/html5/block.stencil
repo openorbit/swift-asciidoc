@@ -255,6 +255,42 @@
     {% endif %}
   </figure>
 
+{% elif block.kind == "blockMacro" and block.name == "score" %}
+  <div class="block score-block {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}"
+       data-instrument="{{ block.attributes.instrument }}"
+       data-tuning="{{ block.attributes.tuning }}"
+       data-capo="{{ block.attributes.capo }}"
+       data-tabs="{{ block.attributes.tabs }}"
+       data-audio="{{ block.attributes.audio }}"
+       {% if block.id %}id="{{ block.id }}"{% endif %}>
+    {% if block.titleHTML %}
+      <p class="block-title">{{ block.titleHTML }}</p>
+    {% endif %}
+    <div class="score-notation" data-score-notation></div>
+    <div class="score-audio" data-score-audio hidden></div>
+    <pre class="score-source" data-score-source hidden>{{ block.target }}</pre>
+  </div>
+
+{% elif block.kind == "blockMacro" and block.name == "lyrics" %}
+  <div class="block lyrics-block {% if block.meta.roleClass %}{{ block.meta.roleClass }}{% endif %}"
+       {% if block.part %}data-part="{{ block.part }}"{% endif %}
+       {% if block.id %}id="{{ block.id }}"{% endif %}>
+    {% if block.titleHTML %}
+      <p class="block-title">{{ block.titleHTML }}</p>
+    {% endif %}
+    {% if block.part %}
+      <p class="lyrics-part">{{ block.part }}</p>
+    {% endif %}
+    <div class="lyrics-body {% if block.hasChords %}has-chords{% endif %}">
+      {% for line in block.lines %}
+        <div class="lyrics-line {% if block.hasChords %}has-chords{% endif %}">
+          {% if block.hasChords and line.chordLine %}<div class="lyrics-chord-row" aria-hidden="true"><span class="lyrics-chord-text">{{ line.chordLine }}</span></div>{% endif %}
+          <div class="lyrics-text-row"><span class="lyrics-text">{{ line.text }}</span></div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
 {% elif block.kind == "blockMacro" %}
   <div class="block block-macro {% if block.roleClass %}{{ block.roleClass }}{% endif %}"
        data-name="{{ block.name }}"

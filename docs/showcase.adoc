@@ -2,7 +2,7 @@
 
 The `examples/showcase.adoc` document exercises the features that we most often want to eyeball—lists,
 description lists, verbatim listings with callouts, PlantUML diagrams,
-tables, and inline math.
+ABC scores, lyrics with chords, tables, and inline math.
 
 Run `scripts/render-showcase.sh` to render that document with every backend:
 
@@ -15,6 +15,7 @@ Run `scripts/render-showcase.sh` to render that document with every backend:
 The script:
 
 . Builds/runs `asciidoc-swift` three times to create HTML, DocBook 5 XML, and LaTeX output.
+. Enables the `score` and `lyrics` extensions so music examples render in the HTML output.
 . If `pdflatex` is available it compiles the LaTeX file twice and stores `showcase-render.pdf` beside the other artifacts.
 . If `xsltproc` and Apache FOP are installed it also converts the DocBook XML to PDF using the DocBook XSL-FO stylesheets (honouring `DOCBOOK_XSL_FO` if you want to point at a custom stylesheet).
 . If you have DocBook xslTNG available plus a Saxon processor, the script can turn the DocBook XML into HTML5 directly (handy for MathML-heavy documents that don’t round-trip well through FO/FOP). Set the following before running the script:
