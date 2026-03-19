@@ -21,6 +21,85 @@ Current additions include:
 * Layout-oriented attributes intended for paged and PDF-style renderers.
 * Scoped attributes for block- and section-level overrides.
 
+== Music Extensions
+
+The project also has an HTML-oriented music workflow built around three pieces:
+
+* `score` for ABC notation, optional tablature, and optional playback controls.
+* `lyrics` for lead-sheet style lyrics with ChordPro-like inline chord markers.
+* `chord` for standalone chord diagrams, with built-in guitar voicings for standard, drop-d, and dadgad tuning.
+
+The parser-side music extensions are opt-in:
+
+[source,bash]
+----
+swift run asciidoc-swift render \
+  --backend html5 \
+  --extension score \
+  --extension lyrics \
+  examples/showcase.adoc
+----
+
+`score` and `lyrics` need to be enabled with `--extension`.
+`chord::...[]` diagrams are resolved through the built-in music block macro resolver and do not need a separate parser extension.
+
+=== Score
+
+Use a normal delimited block with the `score` style.
+Add `tabs` to request instrument tablature in HTML, and `audio` to enable playback controls.
+
+[source,adoc]
+....
+[score,tabs,audio,instrument=guitar]
+----
+X:1
+T:Scale Fragment
+M:4/4
+L:1/4
+K:C
+C D E F | G A B c |
+----
+....
+
+The current HTML implementation uses `abcjs` for rendering and playback.
+
+=== Lyrics
+
+Use a `lyrics` block for song text.
+Add the `chords` option to enable inline chord parsing, and use `part=` for section labels such as `verse` or `chorus`.
+
+[source,adoc]
+....
+[lyrics,chords,part=verse]
+----
+[G]Amazing [C]grace, how [G]sweet the sound
+That [G]saved a [D]wretch li[Cm]ke [G]me
+----
+....
+
+Chord markers are local to the `lyrics` block and use a ChordPro-like inline form such as `[G]` or `[Cm]`.
+
+=== Chord Diagrams
+
+Use `chord::Name[]` for standalone chord diagrams.
+For common guitar voicings, the music resolver can supply built-in shapes:
+
+[source,adoc]
+....
+chord::G[]
+chord::D5[tuning=drop-d]
+chord::Dsus4[tuning=dadgad]
+....
+
+You can also override the built-in lookup and provide an explicit fingering:
+
+[source,adoc]
+....
+chord::G[frets="3 2 0 0 0 3",fingers="2 1 0 0 0 3"]
+....
+
+If explicit fingering is present, it wins over the built-in chord library.
+
 Scoped attributes:
 
 * `attrpush::[]` and `attrpop::[]` push/pop the attribute environment.
