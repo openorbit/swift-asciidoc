@@ -1,5 +1,6 @@
 = Double Column Flow Template
 :page.masters: {"default": {"size": "A4", "margins": {"top": "18mm", "right": "18mm", "bottom": "20mm", "left": "18mm"}, "duplex": false}}
+:style: {"font": {"body": "Libertinus Serif", "heading": "Libertinus Sans", "mono": "Iosevka"}, "size": {"body": "11pt", "h1": "20pt", "h2": "14pt"}, "line": {"leading": 1.35}, "color": {"text": "#111827", "muted": "#4b5563"}}
 
 [layout]
 ----
