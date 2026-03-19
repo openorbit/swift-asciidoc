@@ -531,9 +531,13 @@ public final class DocumentRenderer {
             ]
 
         case .blockMacro(let m):
-            let altText = m.meta.attributes["alt"] ?? m.meta.attributes["1"] ?? m.title?.plain ?? ""
+            var macroAttributes = m.attributes
+            for (key, value) in m.meta.attributes {
+                macroAttributes[key] = value
+            }
+            let altText = macroAttributes["alt"] ?? macroAttributes["1"] ?? m.title?.plain ?? ""
             if m.name == "lyrics" {
-                let lyrics = parseLyrics(target: m.target ?? "", chordsEnabled: isTruthy(m.meta.attributes["chords"]))
+                let lyrics = parseLyrics(target: m.target ?? "", chordsEnabled: isTruthy(macroAttributes["chords"]))
                 return [
                     "kind": "blockMacro",
                     "name": m.name,
@@ -541,7 +545,7 @@ public final class DocumentRenderer {
                     "titleHTML": m.title.map { renderInlines($0.inlines, context: context) } ?? "",
                     "titlePlain": m.title?.plain ?? "",
                     "altText": altText,
-                    "attributes": m.meta.attributes,
+                    "attributes": macroAttributes,
                     "options": Array(m.meta.options),
                     "roles": m.meta.roles,
                     "roleClass": m.meta.roles.joined(separator: " "),
@@ -549,7 +553,7 @@ public final class DocumentRenderer {
                     "meta": metaContext(m.meta),
                     "lines": lyrics.lines,
                     "hasChords": lyrics.hasChords,
-                    "part": m.meta.attributes["part"] ?? ""
+                    "part": macroAttributes["part"] ?? ""
                 ]
             }
             return [
@@ -559,7 +563,7 @@ public final class DocumentRenderer {
                 "titleHTML": m.title.map { renderInlines($0.inlines, context: context) } ?? "",
                 "titlePlain": m.title?.plain ?? "",
                 "altText": altText,
-                "attributes": m.meta.attributes,
+                "attributes": macroAttributes,
                 "options": Array(m.meta.options),
                 "roles": m.meta.roles,
                 "roleClass": m.meta.roles.joined(separator: " "),

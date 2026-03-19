@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/abcjs@6.4.3/abcjs-audio.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/default.min.css">
     <script src="https://cdn.jsdelivr.net/npm/abcjs@6.4.3/dist/abcjs-basic-min.js"></script>
+    <script src="https://omnibrain.github.io/svguitar/js/svguitar.umd.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
     {% if xad and xad.template and xad.template.css %}
       {% for href in xad.template.css %}
@@ -568,6 +569,58 @@
         display: none;
       }
 
+      .chord-block {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 1rem;
+        margin: 1rem 1rem 1rem 0;
+        border: 1px solid var(--border-soft);
+        border-radius: 18px;
+        background: linear-gradient(180deg, var(--surface), var(--surface-muted));
+        min-width: 10rem;
+      }
+
+      .chord-diagram {
+        width: 100%;
+        max-width: 11rem;
+        min-height: 9rem;
+        color: var(--text-primary);
+      }
+
+      .chord-diagram svg {
+        display: block;
+        width: 100%;
+        height: auto;
+        color: var(--text-primary);
+      }
+
+      .chord-diagram svg text {
+        fill: var(--text-primary) !important;
+        stroke: none !important;
+      }
+
+      .chord-diagram svg line,
+      .chord-diagram svg path,
+      .chord-diagram svg rect,
+      .chord-diagram svg polyline,
+      .chord-diagram svg polygon {
+        stroke: var(--text-primary) !important;
+      }
+
+      .chord-diagram svg circle,
+      .chord-diagram svg ellipse {
+        stroke: var(--text-primary) !important;
+        fill: var(--text-primary) !important;
+      }
+
+      .chord-caption {
+        margin: 0;
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+
       .lyrics-block {
         padding: 1.25rem 1.4rem;
         border: 1px solid var(--border-soft);
@@ -586,22 +639,23 @@
       }
 
       .lyrics-body {
-        display: block;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.05rem;
         margin: 0;
         padding: 0;
       }
 
       .lyrics-line {
-        display: block;
+        display: inline-flex;
+        flex-direction: column;
+        align-items: flex-start;
         font-family: var(--monospace);
         font-size: 1rem;
         line-height: 1;
-        margin: 0 0 0.05rem;
+        margin: 0;
         padding: 0;
-      }
-
-      .lyrics-line:last-child {
-        margin-bottom: 0;
       }
 
       .lyrics-text-row {
@@ -873,6 +927,140 @@
             audioNode.hidden = true;
           });
         });
+
+        if (typeof svguitar !== "undefined") {
+          const instrumentDefaults = {
+            guitar: { strings: 6, tuning: ['E', 'A', 'D', 'G', 'B', 'E'] },
+            ukulele: { strings: 4, tuning: ['G', 'C', 'E', 'A'] },
+            bass: { strings: 4, tuning: ['E', 'A', 'D', 'G'] }
+          };
+
+          function parseList(value) {
+            return (value || '')
+              .split(/[\s,]+/)
+              .map(function(entry) { return entry.trim(); })
+              .filter(Boolean);
+          }
+
+          function parseNumber(value) {
+            const number = Number(value);
+            return Number.isFinite(number) ? number : undefined;
+          }
+
+          function parseFingerEntries(values, fingers, stringCount) {
+            const entries = [];
+            let minPositiveFret;
+            let maxFret = 0;
+
+            values.forEach(function(value, index) {
+              const stringNumber = stringCount - index;
+              const normalized = value.toLowerCase();
+
+              if (normalized === 'x' || normalized === 'm') {
+                entries.push([stringNumber, 'x']);
+                return;
+              }
+
+              const fret = Number(value);
+              if (!Number.isFinite(fret)) {
+                return;
+              }
+
+              if (fret === 0) {
+                entries.push([stringNumber, 0]);
+                return;
+              }
+
+              minPositiveFret = minPositiveFret === undefined ? fret : Math.min(minPositiveFret, fret);
+              maxFret = Math.max(maxFret, fret);
+
+              const fingerText = fingers[index];
+              if (fingerText && fingerText !== '0' && fingerText !== '-') {
+                entries.push([stringNumber, fret, fingerText]);
+              } else {
+                entries.push([stringNumber, fret]);
+              }
+            });
+
+            return {
+              entries: entries,
+              minPositiveFret: minPositiveFret,
+              maxFret: maxFret
+            };
+          }
+
+          document.querySelectorAll('.chord-block').forEach(function(block) {
+            const container = block.querySelector('[data-chord-diagram]');
+            if (!container) {
+              return;
+            }
+
+            if (!container.id) {
+              container.id = 'chord-diagram-' + Math.random().toString(36).slice(2, 10);
+            }
+
+            const chordName = block.dataset.chordName || '';
+            const label = block.dataset.chordLabel || chordName;
+            const instrument = (block.dataset.instrument || 'guitar').toLowerCase();
+            const defaults = instrumentDefaults[instrument] || instrumentDefaults.guitar;
+            const strings = parseNumber(block.dataset.strings) || defaults.strings;
+            const tuning = parseList(block.dataset.tuning);
+            const fretValues = parseList(block.dataset.frets);
+            const fingerValues = parseList(block.dataset.fingers);
+
+            if (!fretValues.length) {
+              container.textContent = chordName;
+              return;
+            }
+
+            const parsedFingers = parseFingerEntries(fretValues.slice(0, strings), fingerValues, strings);
+            const explicitPosition = parseNumber(block.dataset.position);
+            const position = explicitPosition || ((parsedFingers.minPositiveFret && parsedFingers.minPositiveFret > 1) ? parsedFingers.minPositiveFret : 1);
+            const fretCount = Math.max(4, parsedFingers.maxFret > 0 ? (parsedFingers.maxFret - position + 2) : 4);
+            const barreSpec = parseList(block.dataset.barre);
+            const barres = [];
+
+            if (barreSpec.length >= 3) {
+              const fret = Number(barreSpec[0]);
+              const fromString = Number(barreSpec[1]);
+              const toString = Number(barreSpec[2]);
+              if ([fret, fromString, toString].every(Number.isFinite)) {
+                const barre = {
+                  fret: fret,
+                  fromString: fromString,
+                  toString: toString
+                };
+                if (barreSpec[3]) {
+                  barre.text = barreSpec[3];
+                }
+                barres.push(barre);
+              }
+            }
+
+            try {
+              new svguitar.SVGuitarChord('#' + container.id)
+                .configure({
+                  strings: strings,
+                  tuning: tuning.length ? tuning : defaults.tuning,
+                  frets: fretCount,
+                  position: position,
+                  fixedDiagramPosition: true,
+                  fingerSize: 0.65,
+                  fretSize: 1.4,
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, monospace'
+                })
+                .chord({
+                  title: label,
+                  position: position,
+                  fingers: parsedFingers.entries,
+                  barres: barres
+                })
+                .draw();
+            } catch (error) {
+              container.textContent = chordName;
+            }
+          });
+        }
       });
     </script>
   </body>
