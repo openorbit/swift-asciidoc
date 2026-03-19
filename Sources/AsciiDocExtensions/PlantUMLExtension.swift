@@ -260,6 +260,7 @@ public struct PlantUMLExtension: AsciiDocExtension {
         let macro = AdocBlockMacro(
             name: "image",
             target: relativeTargetPath(for: destinationURL),
+            attributes: [:],
             id: meta.id,
             title: title,
             reftext: reftext,

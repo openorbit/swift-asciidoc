@@ -92,7 +92,7 @@ private func stripSpans(_ block: AdocBlock) -> AdocBlock {
         dlist.items = dlist.items.map { item in
             var updated = item
             updated.span = nil
-            let hasKbd = item.term.inlines.contains { node in // Assuming 'p' was a typo and meant 'item'
+            let _ = item.term.inlines.contains { node in // Assuming 'p' was a typo and meant 'item'
              if case .inlineMacro(let name, let target, let body, _) = node {
                 return name == "kbd" && (target == nil || target?.isEmpty == true) && body == "Ctrl+C"
             }

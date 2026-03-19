@@ -6,7 +6,8 @@
 extension AdocParser {
     func parseExample(
         it: inout TokenIter,
-        env: AttrEnv
+        env: inout AttrEnv,
+        warnings: inout [AdocWarning]
     ) -> AdocExample? {
         // We expect the current token to be an example fence
         guard let open = it.peek(),
@@ -20,7 +21,7 @@ extension AdocParser {
         it.consume()
 
         // Parse inner blocks until we see a matching example fence
-        let innerBlocks: [AdocBlock] = parseBlocks(it: &it, env: env) { tok in
+        let innerBlocks: [AdocBlock] = parseBlocks(it: &it, env: &env, warnings: &warnings) { tok in
             if case .blockFence(let k, let l) = tok.kind,
                k == .example, l == fenceLen {
                 return true   // stop before this token

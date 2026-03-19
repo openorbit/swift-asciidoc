@@ -26,6 +26,27 @@ render html html
 render docbook xml
 render latex tex
 
+render_xad_example() {
+  local name="$1"
+  local template="$2"
+  local doc="${REPO_ROOT}/examples/xad/${name}/content.adoc"
+  local out="${OUTPUT_DIR}/xad-${name}.html"
+  if [[ ! -f "${doc}" ]]; then
+    echo "⚠︎ XAD example not found at ${doc}; skipping"
+    return
+  fi
+  echo "→ Rendering XAD example ${name} (${template}) to ${out}"
+  swift run -q asciidoc-swift xad-paged-html \
+    --template "${TEMPLATE_ROOT}" \
+    --xad-layout-template "${template}" \
+    --output "${out}" \
+    "${doc}"
+}
+
+render_xad_example trivial trivial
+render_xad_example double-column-explicit double-column-explicit
+render_xad_example double-column-flow double-column-flow
+
 convert_docbook_pdf() {
   local xml="${OUTPUT_DIR}/showcase.xml"
   if [[ ! -f "${xml}" ]]; then

@@ -1,0 +1,17 @@
+= Double Column Flow Template
+:page.masters: {"default": {"size": "A4", "margins": {"top": "18mm", "right": "18mm", "bottom": "20mm", "left": "18mm"}, "duplex": false}}
+
+[layout]
+----
+// Double-column flow layout with a header stack.
+pages[
+  page(master:"default")[
+    stack[
+      flow(slot("title")),
+      flow(slot("abstract")),
+      flow(slot("authors")),
+      place(area:"columns")[ flow(slot("main")) ]
+    ]
+  ]
+]
+----

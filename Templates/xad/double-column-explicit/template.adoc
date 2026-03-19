@@ -1,0 +1,21 @@
+= Double Column Explicit Template
+:page.masters: {"default": {"size": "A4", "margins": {"top": "18mm", "right": "18mm", "bottom": "20mm", "left": "18mm"}, "duplex": false}}
+
+[layout]
+----
+// Double-column layout with a header stack.
+pages[
+  page(master:"default")[
+    stack[
+      flow(slot("title")),
+      flow(slot("abstract")),
+      flow(slot("authors")),
+      // Content assigns slot="left" and slot="right" for columns.
+      grid[
+        place(area:"left")[ flow(slot("left")) ],
+        place(area:"right")[ flow(slot("right")) ]
+      ]
+    ]
+  ]
+]
+----

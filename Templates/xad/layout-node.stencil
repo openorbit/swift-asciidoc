@@ -1,0 +1,49 @@
+{% if node.kind == "pages" %}
+  <div class="xad-layout">
+    {% for node in node.children %}
+      {% include "xad/layout-node.stencil" %}
+    {% endfor %}
+  </div>
+{% elif node.kind == "page" %}
+  <section class="xad-page" {% if node.args.master %}data-master="{{ node.args.master }}"{% endif %}>
+    {% for node in node.children %}
+      {% include "xad/layout-node.stencil" %}
+    {% endfor %}
+  </section>
+{% elif node.kind == "grid" %}
+  <div class="xad-grid">
+    {% for node in node.children %}
+      {% include "xad/layout-node.stencil" %}
+    {% endfor %}
+  </div>
+{% elif node.kind == "place" %}
+  <div class="xad-area" {% if node.args.area %}data-area="{{ node.args.area }}"{% endif %}>
+    {% for node in node.children %}
+      {% include "xad/layout-node.stencil" %}
+    {% endfor %}
+  </div>
+{% elif node.kind == "stack" %}
+  <div class="xad-stack">
+    {% for node in node.children %}
+      {% include "xad/layout-node.stencil" %}
+    {% endfor %}
+  </div>
+{% elif node.kind == "flow" %}
+  <div class="xad-flow" {% if node.dataSlot %}data-slot="{{ node.dataSlot }}"{% endif %}>
+    {% for block in node.blocks %}
+      {% include "html5/block.stencil" %}
+    {% endfor %}
+  </div>
+{% elif node.kind == "text" %}
+  <div class="xad-text">{{ node.text }}</div>
+{% elif node.kind == "counter" %}
+  <span class="xad-counter"></span>
+{% elif node.kind == "sink" %}
+  <div class="xad-sink" {% if node.args.kind %}data-kind="{{ node.args.kind }}"{% endif %}{% if node.args.scope %} data-scope="{{ node.args.scope }}"{% endif %}></div>
+{% else %}
+  <div class="xad-node">
+    {% for node in node.children %}
+      {% include "xad/layout-node.stencil" %}
+    {% endfor %}
+  </div>
+{% endif %}

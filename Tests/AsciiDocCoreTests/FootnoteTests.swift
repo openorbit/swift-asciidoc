@@ -42,8 +42,8 @@ struct FootnoteTests {
         guard case .text(let w, _) = inlines[0] else { #expect(Bool(false)); return }
         #expect(w == "Word")
         
-        guard case .footnote(let content, let ref, let id, _) = inlines[1] else { 
-            #expect(Bool(false), "Expected footnote with ref") 
+        guard case .footnote(let content, let ref, _, _) = inlines[1] else {
+            #expect(Bool(false), "Expected footnote with ref")
             return 
         }
         #expect(ref == "myid")
@@ -89,7 +89,7 @@ struct FootnoteTests {
     @Test func resolvingFootnoteReferences() async throws {
         // Test ref resolution: footnote:foo[Text] ... footnote:foo[]
         let src = "Def footnote:foo[Main]. Ref footnote:foo[]."
-        let p = AdocParagraph(text: AdocText(plain: src))
+        let _ = AdocParagraph(text: AdocText(plain: src))
         // Note: AdocText(plain:) parses internally using default parser? 
         // No, AdocText(plain:) creates a .text node. It does NOT parse markup!
         // I need to parse inlines manually for this test to be realistic if I'm testing Resolver on pre-parsed nodes.
@@ -119,7 +119,7 @@ struct FootnoteTests {
         // Check content?
         
         // Check resolved nodes
-        guard let pr = resolution.document.blocks.first as? AdocBlock,
+        guard let pr = resolution.document.blocks.first,
               case .paragraph(let par) = pr else {
             return
         }

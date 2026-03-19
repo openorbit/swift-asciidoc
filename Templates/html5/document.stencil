@@ -6,7 +6,16 @@
     <title>{{ headerTitle }}</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/styles/default.min.css">
     <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.11.1/build/highlight.min.js"></script>
+    {% if xad and xad.template and xad.template.css %}
+      {% for href in xad.template.css %}
+    <link rel="stylesheet" href="{{ href }}">
+      {% endfor %}
+    {% endif %}
     <style>
+      {% if xad and xad.template and xad.template.pageCSS %}
+      {{ xad.template.pageCSS }}
+      {% endif %}
+
       :root {
         --surface: #ffffff;
         --surface-muted: #f6f7fb;
@@ -64,6 +73,69 @@
         border-radius: 18px;
         padding: 3rem clamp(1.5rem, 4vw, 3rem);
         box-shadow: var(--shadow-soft);
+      }
+
+      .xad-doc {
+        width: min(1100px, calc(100% - 2.5rem));
+        margin: 0 auto;
+        background: var(--surface);
+        border-radius: 18px;
+        padding: 2.5rem clamp(1.5rem, 4vw, 3rem);
+        box-shadow: var(--shadow-soft);
+      }
+
+      .xad-layout {
+        display: grid;
+        gap: 1.5rem;
+      }
+
+      .xad-page {
+        background: var(--surface);
+        border: 1px solid var(--border-soft);
+        border-radius: 20px;
+        padding: 2rem;
+        min-height: 11in;
+        box-shadow: var(--shadow-soft);
+      }
+
+      .xad-stack {
+        display: grid;
+        gap: 1.5rem;
+      }
+
+      .xad-flow {
+        min-width: 0;
+      }
+
+      .xad-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+        gap: 1.5rem;
+      }
+
+      .xad-area {
+        padding: 1.5rem;
+        border: 1px solid var(--border-soft);
+        border-radius: 16px;
+        background: linear-gradient(135deg, var(--surface), var(--surface-muted));
+      }
+
+      .xad-area[data-area="columns"] {
+        column-count: 2;
+        column-gap: 2rem;
+        column-rule: 1px solid var(--border-soft);
+      }
+
+      .xad-area[data-area="columns"] > * {
+        break-inside: avoid;
+      }
+
+      .xad-sink {
+        padding: 1rem;
+        border: 1px dashed var(--border-soft);
+        border-radius: 12px;
+        color: var(--text-muted);
+        font-size: 0.95rem;
       }
 
       .doc-header {
@@ -417,6 +489,28 @@
         background: var(--surface-muted);
       }
 
+      @media print {
+        body {
+          background: #ffffff;
+          padding: 0;
+        }
+
+        .xad-doc {
+          width: auto;
+          margin: 0;
+          padding: 0;
+          box-shadow: none;
+          border-radius: 0;
+        }
+
+        .xad-page {
+          box-shadow: none;
+          border: none;
+          border-radius: 0;
+          page-break-after: always;
+        }
+      }
+
       /* Footnotes */
       #footnotes {
         margin-top: 3rem;
@@ -442,77 +536,95 @@
     </style>
   </head>
   <body>
-    <div class="doc-shell">
-      {% if headerTitle or attributes["subtitle"] or attributes["author"] or attributes["revdate"] %}
-        <header class="doc-header">
-          {% if headerTitle %}
-            <h1>{{ headerTitle }}</h1>
-          {% endif %}
-          {% if attributes["subtitle"] %}
-            <p class="subtitle">{{ attributes["subtitle"] }}</p>
-          {% endif %}
-          {% if attributes["author"] or attributes["revdate"] or attributes["revnumber"] %}
-            <div class="doc-meta">
-              {% if attributes["author"] %}
-                <span>{{ attributes["author"] }}</span>
-              {% endif %}
-              {% if attributes["revnumber"] %}
-                <span>v{{ attributes["revnumber"] }}</span>
-              {% endif %}
-              {% if attributes["revdate"] %}
-                <span>{{ attributes["revdate"] }}</span>
-              {% endif %}
-            </div>
-          {% endif %}
-        </header>
-      {% endif %}
-
-      <main class="doc-body">
-        {% for block in blocks %}
-          {% include "html5/block.stencil" %}
-        {% endfor %}
-      </main>
-
-      {% if footnotes %}
-        <div id="footnotes">
-          {% for f in footnotes %}
-    <div class="footnote" id="_footnotedef_{{ f.id }}">
-    <a href="#_footnoteref_{{ f.id }}">{{ f.id }}</a>. {{ f.content }}
-    </div>
-    {% endfor %}
-</div>
-{% endif %}
-
-{% if indexCatalog %}
-<div id="index" class="sect1">
-    <h2 id="_index">Index</h2>
-    <div class="sectionbody">
-        <ul class="index">
-        {% for entry in indexCatalog %}
-            <li>{{ entry.primary }}
-                {% if entry.secondary %}
-                <ul>
-                    {% for sec in entry.secondary %}
-                    <li>{{ sec.name }}
-                        {% if sec.tertiary %}
-                        <ul>
-                            {% for tert in sec.tertiary %}
-                            <li>{{ tert }}</li>
-                            {% endfor %}
-                        </ul>
-                        {% endif %}
-                    </li>
-                    {% endfor %}
-                </ul>
+    {% if xad and xad.enabled and xad.layoutTree %}
+      <div class="xad-doc">
+        <div class="xad-layout">
+          {% for node in xad.layoutTree.nodes %}
+            {% include "xad/layout-node.stencil" %}
+          {% endfor %}
+        </div>
+      </div>
+    {% else %}
+      <div class="doc-shell">
+        {% if headerTitle or attributes["subtitle"] or attributes["author"] or attributes["revdate"] %}
+          <header class="doc-header">
+            {% if headerTitle %}
+              <h1>{{ headerTitle }}</h1>
+            {% endif %}
+            {% if attributes["subtitle"] %}
+              <p class="subtitle">{{ attributes["subtitle"] }}</p>
+            {% endif %}
+            {% if attributes["author"] or attributes["revdate"] or attributes["revnumber"] %}
+              <div class="doc-meta">
+                {% if attributes["author"] %}
+                  <span>{{ attributes["author"] }}</span>
                 {% endif %}
-            </li>
-        {% endfor %}
-        </ul>
-    </div>
-</div>
-{% endif %}
+                {% if attributes["revnumber"] %}
+                  <span>v{{ attributes["revnumber"] }}</span>
+                {% endif %}
+                {% if attributes["revdate"] %}
+                  <span>{{ attributes["revdate"] }}</span>
+                {% endif %}
+              </div>
+            {% endif %}
+          </header>
+        {% endif %}
 
-    </div>
+        <main class="doc-body">
+          {% for block in blocks %}
+            {% include "html5/block.stencil" %}
+          {% endfor %}
+        </main>
+
+        {% if footnotes %}
+          <div id="footnotes">
+            {% for f in footnotes %}
+      <div class="footnote" id="_footnotedef_{{ f.id }}">
+      <a href="#_footnoteref_{{ f.id }}">{{ f.id }}</a>. {{ f.content }}
+      </div>
+      {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if indexCatalog %}
+  <div id="index" class="sect1">
+      <h2 id="_index">Index</h2>
+      <div class="sectionbody">
+          <ul class="index">
+          {% for entry in indexCatalog %}
+              <li>{{ entry.primary }}
+                  {% if entry.secondary %}
+                  <ul>
+                      {% for sec in entry.secondary %}
+                      <li>{{ sec.name }}
+                          {% if sec.tertiary %}
+                          <ul>
+                              {% for tert in sec.tertiary %}
+                              <li>{{ tert }}</li>
+                              {% endfor %}
+                          </ul>
+                          {% endif %}
+                      </li>
+                      {% endfor %}
+                  </ul>
+                  {% endif %}
+              </li>
+          {% endfor %}
+          </ul>
+      </div>
+  </div>
+  {% endif %}
+
+      </div>
+    {% endif %}
+    {% if xad and xad.template and xad.template.js %}
+      {% for src in xad.template.js %}
+    <script src="{{ src }}"></script>
+      {% endfor %}
+    {% endif %}
+    {% if xad and xad.pagedJS %}
+      <script src="https://unpkg.com/pagedjs/dist/paged.polyfill.js"></script>
+    {% endif %}
     <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/highlight.min.js"></script>
     <script>document.addEventListener("DOMContentLoaded",function(){window.hljs&&window.hljs.highlightAll();});</script>
   </body>

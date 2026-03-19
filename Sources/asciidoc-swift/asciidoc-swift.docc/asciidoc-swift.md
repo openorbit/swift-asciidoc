@@ -53,10 +53,71 @@ asciidoc-swift html [--stdin] [--template <template>] [--attribute <attribute> .
 | `<input-path>` | Path to the `.adoc` document (omit when using `--stdin`). |
 | `--stdin` | Read source from stdin. Otherwise provide a path argument. |
 | `--template <template>` | Path to the Stencil templates root directory. (default: `Templates`) |
+| `--xad` | Enable XAD mode. |
+| `--xad-strict` | Enable strict XAD parsing. |
+| `--xad-paged-js` | Enable Paged.js hooks (HTML only). |
+| `--xad-template <xad-template>` | Path to XAD template (`.adoc`). |
 | `-a`, `--attribute <attribute>` | Set document attribute (`name[=value]`). Repeatable. |
 | `-o`, `--output <output>` | Write rendered output to this path. |
 | `-e`, `--extension <extension>` | Enable an extension by name (repeatable). |
 | `-h`, `--help` | Show help information. |
+
+#### `xad-html` subcommand
+
+The xad-html subcommand converts an AsciiDoc document to HTML5 with XAD enabled.
+
+##### Usage
+
+```bash
+asciidoc-swift xad-html [--stdin] [--template <template>] [--attribute <attribute> ...] [--output <output>] [<input-path>] [--extension <extension> ...]
+```
+
+##### Arguments and Options
+
+| Option | Description |
+| :--- | :--- |
+| `<input-path>` | Path to the `.adoc` document (omit when using `--stdin`). |
+| `--stdin` | Read source from stdin. Otherwise provide a path argument. |
+| `--template <template>` | Path to the Stencil templates root directory. (default: `Templates`) |
+| `--xad-strict` | Enable strict XAD parsing. |
+| `--xad-template <xad-template>` | Path to XAD template (`.adoc`). |
+| `-a`, `--attribute <attribute>` | Set document attribute (`name[=value]`). Repeatable. |
+| `-o`, `--output <output>` | Write rendered output to this path. |
+| `-e`, `--extension <extension>` | Enable an extension by name (repeatable). |
+| `-h`, `--help` | Show help information. |
+
+#### `xad-paged-html` subcommand
+
+The xad-paged-html subcommand converts an AsciiDoc document to HTML5 with XAD enabled
+and Paged.js hooks turned on.
+
+##### Usage
+
+```bash
+asciidoc-swift xad-paged-html [--stdin] [--template <template>] [--xad-layout-template <layout>] [--xad-template-base <dir>] [--xad-template-search-path <dir> ...] [--list-xad-templates] [--attribute <attribute> ...] [--output <output>] [<input-path>] [--extension <extension> ...]
+```
+
+##### Arguments and Options
+
+| Option | Description |
+| :--- | :--- |
+| `<input-path>` | Path to the `.adoc` document (omit when using `--stdin`). |
+| `--stdin` | Read source from stdin. Otherwise provide a path argument. |
+| `--template <template>` | Path to the Stencil templates root directory. (default: `Templates`) |
+| `--xad-strict` | Enable strict XAD parsing. |
+| `--xad-template <xad-template>` | Path to XAD template (`.adoc`). |
+| `--xad-layout-template <layout>` | XAD paged layout template name or path (default: `default`). |
+| `--xad-template-base <dir>` | Base directory for resolving XAD paged template paths. |
+| `--xad-template-search-path <dir>` | Additional XAD paged template search paths (repeatable). |
+| `--list-xad-templates` | List available XAD paged templates and exit. |
+| `-a`, `--attribute <attribute>` | Set document attribute (`name[=value]`). Repeatable. |
+| `-o`, `--output <output>` | Write rendered output to this path. |
+| `-e`, `--extension <extension>` | Enable an extension by name (repeatable). |
+| `-h`, `--help` | Show help information. |
+
+##### XAD Layout Context
+
+When using `xad-paged-html`, the parsed layout DSL is exposed in the render context under `xad.layoutProgram`. The structure is JSON-friendly and includes `expressions` with `node` and `value` entries (each node includes `name`, `args`, and `children`).
 
 
 #### `docbook` subcommand
@@ -78,6 +139,10 @@ asciidoc-swift docbook [--stdin] [--template <template>] [--attribute <attribute
 | `<input-path>` | Path to the `.adoc` document (omit when using `--stdin`). |
 | `--stdin` | Read source from stdin. Otherwise provide a path argument. |
 | `--template <template>` | Path to the Stencil templates root directory. (default: `Templates`) |
+| `--xad` | Enable XAD mode. |
+| `--xad-strict` | Enable strict XAD parsing. |
+| `--xad-paged-js` | Enable Paged.js hooks (HTML only). |
+| `--xad-template <xad-template>` | Path to XAD template (`.adoc`). |
 | `-a`, `--attribute <attribute>` | Set document attribute (`name[=value]`). Repeatable. |
 | `-o`, `--output <output>` | Write rendered output to this path. |
 | `-e`, `--extension <extension>` | Enable an extension by name (repeatable). |
@@ -103,6 +168,10 @@ asciidoc-swift latex [--stdin] [--template <template>] [--attribute <attribute> 
 | `<input-path>` | Path to the `.adoc` document (omit when using `--stdin`). |
 | `--stdin` | Read source from stdin. Otherwise provide a path argument. |
 | `--template <template>` | Path to the Stencil templates root directory. (default: `Templates`) |
+| `--xad` | Enable XAD mode. |
+| `--xad-strict` | Enable strict XAD parsing. |
+| `--xad-paged-js` | Enable Paged.js hooks (HTML only). |
+| `--xad-template <xad-template>` | Path to XAD template (`.adoc`). |
 | `-a`, `--attribute <attribute>` | Set document attribute (`name[=value]`). Repeatable. |
 | `-o`, `--output <output>` | Write rendered output to this path. |
 | `-e`, `--extension <extension>` | Enable an extension by name (repeatable). |
@@ -139,6 +208,7 @@ asciidoc-swift lint [--stdin] [--no-spellcheck] [--no-semantic-breaks] [--spell-
 
 - [AsciiDocCore](../asciidoccore)
 - [AsciiDocRender](../asciidocrender)
+- [AsciiDocPagedRendering](../asciidocpagedrendering)
 - [AsciiDocTools](../asciidoctools)
 - [AsciiDocExtensions](../asciidocextensions)
 

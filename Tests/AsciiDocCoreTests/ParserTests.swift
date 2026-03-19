@@ -51,7 +51,7 @@ private enum ASGInspector {
         }
       case .dlist(let dl):
         return dl.items.flatMap { $0.blocks?.flatMap(fromBlock) ?? [] }
-      case .discreteHeading, .break, .blockMacro, .leaf, .list, .dlist:
+      case .discreteHeading, .break, .blockMacro, .leaf:
         return []
       }
     }
@@ -175,6 +175,51 @@ struct ParserTests {
       #expect(doc.attributes["revnumber"] == "v1.2")
       #expect(doc.attributes["revdate"] == "2024-05-01")
       #expect(doc.attributes["revremark"] == "Draft")
+    }
+
+    @Test
+    func header_multiple_revision_lines() {
+      let src = """
+      = Sample Guide
+      Jane Doe <jane@example.com>
+      0.1, 2026-01-12: Initial draft
+      0.2, 2026-02-04: Added requirements
+
+      Body text
+      """
+
+      let parser = AdocParser()
+      let doc = parser.parse(text: src, xadOptions: XADOptions(enabled: true))
+
+      #expect(doc.attributes["revnumber"] == "0.2")
+      #expect(doc.attributes["revdate"] == "2026-02-04")
+      #expect(doc.attributes["revremark"] == "Added requirements")
+
+      guard case .dictionary(let docDict)? = doc.typedAttributes["doc"] else {
+        Issue.record("Expected doc typed attributes")
+        return
+      }
+      guard case .array(let revisions)? = docDict["revisions"] else {
+        Issue.record("Expected doc.revisions typed array")
+        return
+      }
+      #expect(revisions.count == 2)
+      if revisions.count >= 2 {
+        if case .dictionary(let first)? = revisions.first {
+          #expect(first["version"] == .string("0.1"))
+          #expect(first["date"] == .string("2026-01-12"))
+          #expect(first["remark"] == .string("Initial draft"))
+        } else {
+          Issue.record("Expected first revision to be a dictionary")
+        }
+        if case .dictionary(let second)? = revisions.last {
+          #expect(second["version"] == .string("0.2"))
+          #expect(second["date"] == .string("2026-02-04"))
+          #expect(second["remark"] == .string("Added requirements"))
+        } else {
+          Issue.record("Expected second revision to be a dictionary")
+        }
+      }
     }
 
     @Test
@@ -307,7 +352,7 @@ struct ParserTests {
       //#expect(secs.contains(where: { $0.level == 1 && $0.title == "Doc" }))
       #expect(secs.contains(where: { $0.level == 1 && $0.title == "Section" }))
 
-      let paras = ASGInspector.paragraphs(asg)
+      let _ = ASGInspector.paragraphs(asg)
       //#expect(paras.contains("Intro para"))
 
       let ls = ASGInspector.lists(asg)

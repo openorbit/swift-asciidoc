@@ -232,7 +232,8 @@ public struct AdocParser: Sendable {
         attributes initialAttributes: [String: String?] = [:],
         lockedAttributeNames: Set<String> = [],
         includeHeaderDerivedAttributes: Bool = true,
-        preprocessorOptions: Preprocessor.Options = .init()
+        preprocessorOptions: Preprocessor.Options = .init(),
+        xadOptions: XADOptions = .init()
     ) -> AdocDocument {
         let preprocessor = Preprocessor(options: preprocessorOptions)
         let preprocessed = preprocessor.process(
@@ -245,20 +246,35 @@ public struct AdocParser: Sendable {
         var it = TokenIter(tokens: toks, text: preprocessed.source.text)
         var header: AdocHeader? = nil
         var docAttrs: [String: String?] = preprocessed.attributes
-        var env = AttrEnv(initial: docAttrs)
+        var typedAttrs: [String: XADAttributeValue] = [:]
+        if xadOptions.enabled {
+            for (key, value) in docAttrs {
+                if let value, let typed = XADAttributeValue.parse(from: value, xadOptions: xadOptions) {
+                    typedAttrs[key] = typed
+                }
+            }
+        }
+        var env = AttrEnv(initial: docAttrs, typedAttributes: typedAttrs, xadOptions: xadOptions)
+        var warnings: [AdocWarning] = []
 
         // Header detection (keep your existing logic)
         detectHeader(
             into: &header,
             attrs: &docAttrs,
+            typedAttrs: &typedAttrs,
             it: &it,
             env: &env,
             lockedAttributes: lockedAttributeNames,
-            includeDerivedAttributes: includeHeaderDerivedAttributes
+            includeDerivedAttributes: includeHeaderDerivedAttributes,
+            xadOptions: xadOptions
         )
+        docAttrs = env.values
+        typedAttrs = env.typedValues
 
         // Body blocks via parseBlocks
-        let bodyBlocks = parseBlocks(it: &it, env: env) { _ in false }
+        let bodyBlocks = parseBlocks(it: &it, env: &env, warnings: &warnings) { _ in false }
+        docAttrs = env.values
+        typedAttrs = env.typedValues
 
         // Document span can still be computed from first/last token
         let docSpan: AdocRange? = {
@@ -266,7 +282,7 @@ public struct AdocParser: Sendable {
             return AdocRange(start: first.range.start, end: last.range.end)
         }()
 
-        return AdocDocument(attributes: docAttrs, header: header, blocks: bodyBlocks, span: docSpan)
+        return AdocDocument(attributes: docAttrs, typedAttributes: typedAttrs, header: header, blocks: bodyBlocks, warnings: warnings, span: docSpan, xadOptions: xadOptions)
     }
 
 

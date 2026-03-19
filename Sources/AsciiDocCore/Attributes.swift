@@ -3,20 +3,180 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 
+import Foundation
+import YYJSON
+
+public enum XADAttributeValue: Sendable, Equatable {
+    case dictionary([String: XADAttributeValue])
+    case array([XADAttributeValue])
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case null
+
+    static func parse(from raw: String, xadOptions: XADOptions) -> XADAttributeValue? {
+        guard xadOptions.enabled else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = trimmed.first, first == "{" || first == "[" else { return nil }
+        guard let data = trimmed.data(using: .utf8) else { return nil }
+
+        var options: YYJSONSerialization.ReadingOptions = []
+        options.insert(.json5Allowed)
+
+        do {
+            let obj = try YYJSONSerialization.jsonObject(with: data, options: options)
+            return XADAttributeValue.fromJSON(obj)
+        } catch {
+            return nil
+        }
+    }
+
+    static func fromJSON(_ value: Any) -> XADAttributeValue? {
+        switch value {
+        case let dict as [String: Any]:
+            var mapped: [String: XADAttributeValue] = [:]
+            for (key, val) in dict {
+                if let converted = fromJSON(val) {
+                    mapped[key] = converted
+                } else {
+                    return nil
+                }
+            }
+            return .dictionary(mapped)
+        case let array as [Any]:
+            var mapped: [XADAttributeValue] = []
+            mapped.reserveCapacity(array.count)
+            for val in array {
+                guard let converted = fromJSON(val) else { return nil }
+                mapped.append(converted)
+            }
+            return .array(mapped)
+        case let str as String:
+            return .string(str)
+        case let bool as Bool:
+            return .bool(bool)
+        case let int as Int:
+            return .number(Double(int))
+        case let double as Double:
+            return .number(double)
+        case let float as Float:
+            return .number(Double(float))
+        case is NSNull:
+            return .null
+        default:
+            return nil
+        }
+    }
+
+
+    public func toJSONCompatible() -> Any {
+        switch self {
+        case .dictionary(let dict):
+            var out: [String: Any] = [:]
+            for (key, value) in dict {
+                out[key] = value.toJSONCompatible()
+            }
+            return out
+        case .array(let array):
+            return array.map { $0.toJSONCompatible() }
+        case .string(let value):
+            return value
+        case .number(let value):
+            return value
+        case .bool(let value):
+            return value
+        case .null:
+            return NSNull()
+        }
+    }
+}
+
 package struct AttrEnv {
     // name → optional value (nil means unset)
     private(set) var values: [String: String?]
+    private(set) var typedValues: [String: XADAttributeValue]
+    private var scopeStack: [ScopeSnapshot]
+    let xadOptions: XADOptions
 
-    package init(initial: [String: String?] = [:]) {
+    private struct ScopeSnapshot {
+        let values: [String: String?]
+        let typedValues: [String: XADAttributeValue]
+    }
+
+    package init(
+        initial: [String: String?] = [:],
+        typedAttributes: [String: XADAttributeValue] = [:],
+        xadOptions: XADOptions = .init(enabled: false)
+    ) {
         self.values = initial
+        self.typedValues = typedAttributes
+        self.scopeStack = []
+        self.xadOptions = xadOptions
     }
 
     mutating func set(_ name: String, to value: String?) {
         values[name] = value
     }
 
+    mutating func pushScope() {
+        let snapshot = ScopeSnapshot(values: values, typedValues: typedValues)
+        scopeStack.append(snapshot)
+    }
+
+    @discardableResult
+    mutating func popScope() -> Bool {
+        guard let snapshot = scopeStack.popLast() else { return false }
+        values = snapshot.values
+        typedValues = snapshot.typedValues
+        return true
+    }
+
+    mutating func applyAttributeSet(name: String, value: String?) {
+        values[name] = value
+        guard xadOptions.enabled else { return }
+        let rawValue = value ?? ""
+        if isXADPathName(name) {
+            let normalizedScalar = stripSurroundingQuotes(rawValue)
+            let typed = XADAttributeValue.parse(from: normalizedScalar, xadOptions: xadOptions) ?? .string(normalizedScalar)
+            setTypedPath(name, value: typed)
+            return
+        }
+        if let value, let typed = XADAttributeValue.parse(from: value, xadOptions: xadOptions) {
+            typedValues[name] = typed
+        } else {
+            typedValues.removeValue(forKey: name)
+        }
+    }
+
+    mutating func applyAttributeUnset(name: String) {
+        values[name] = nil
+        guard xadOptions.enabled else { return }
+        if isXADPathName(name) {
+            setTypedPath(name, value: .null)
+        } else {
+            typedValues.removeValue(forKey: name)
+        }
+    }
+
     func value(for name: String) -> String? {
         values[name] ?? nil
+    }
+
+    func resolveAttribute(_ name: String, join: String? = nil) -> String? {
+        if xadOptions.enabled, isXADPathName(name), let typed = resolveTypedPath(name) {
+            return stringify(typed, join: join)
+        }
+        if let raw = value(for: name) {
+            return raw
+        }
+        if xadOptions.enabled, let typed = typedValues[name] {
+            return stringify(typed, join: join)
+        }
+        return nil
+    }
+
+    package func resolveTypedValue(_ path: String) -> XADAttributeValue? {
+        resolveTypedPath(path)
     }
 
     /// Expand {attr} in a string using the *current* environment.
@@ -37,7 +197,7 @@ package struct AttrEnv {
                 }
                 if j < end, s[j] == "}" {
                     let name = String(s[nameStart..<j])
-                    if let v = value(for: name) {
+                    if let v = resolveAttribute(name) {
                         result += v
                     } else {
                         // Unknown attribute → keep literal {name}
@@ -55,6 +215,182 @@ package struct AttrEnv {
     }
 }
 
+
+private enum XADPathSegment {
+    case key(String)
+    case index(Int)
+}
+
+private func isXADPathName(_ name: String) -> Bool {
+    name.contains(".") || name.contains("[")
+}
+
+private func parseXADPathSegments(_ path: String, env: AttrEnv) -> [XADPathSegment]? {
+    var segments: [XADPathSegment] = []
+    var token = ""
+    var index = path.startIndex
+
+    func appendToken() -> Bool {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        token.removeAll(keepingCapacity: true)
+        guard !trimmed.isEmpty else { return true }
+        if trimmed.allSatisfy({ $0.isNumber }), let value = Int(trimmed) {
+            segments.append(.index(value))
+        } else {
+            segments.append(.key(trimmed))
+        }
+        return true
+    }
+
+    while index < path.endIndex {
+        let ch = path[index]
+        if ch == "." {
+            _ = appendToken()
+            index = path.index(after: index)
+            continue
+        }
+        if ch == "[" {
+            _ = appendToken()
+            let close = path[index...].firstIndex(of: "]")
+            guard let close else { return nil }
+            let content = path[path.index(after: index)..<close]
+            let resolved = resolveBracketIndex(content, env: env)
+            guard let resolved, let intValue = Int(resolved) else { return nil }
+            segments.append(.index(intValue))
+            index = path.index(after: close)
+            continue
+        }
+        token.append(ch)
+        index = path.index(after: index)
+    }
+    _ = appendToken()
+    return segments.isEmpty ? nil : segments
+}
+
+private func resolveBracketIndex(_ content: Substring, env: AttrEnv) -> String? {
+    let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+    if trimmed.hasPrefix("{") && trimmed.hasSuffix("}") {
+        let start = trimmed.index(after: trimmed.startIndex)
+        let end = trimmed.index(before: trimmed.endIndex)
+        let name = String(trimmed[start..<end])
+        return env.resolveAttribute(name)
+    }
+    if let resolved = env.resolveAttribute(String(trimmed)) {
+        return resolved
+    }
+    return String(trimmed)
+}
+
+private func stripSurroundingQuotes(_ value: String) -> String {
+    guard value.count >= 2 else { return value }
+    let first = value.first
+    let last = value.last
+    guard let first, let last, first == last, (first == "\"" || first == "'") else {
+        return value
+    }
+    return String(value.dropFirst().dropLast())
+}
+
+private extension AttrEnv {
+    func resolveTypedPath(_ path: String) -> XADAttributeValue? {
+        guard let segments = parseXADPathSegments(path, env: self), !segments.isEmpty else {
+            return nil
+        }
+        guard case .key(let root) = segments[0], let rootValue = typedValues[root] else {
+            return nil
+        }
+        var current: XADAttributeValue? = rootValue
+        for segment in segments.dropFirst() {
+            guard let value = current else { return nil }
+            switch (value, segment) {
+            case (.dictionary(let dict), .key(let key)):
+                current = dict[key]
+            case (.array(let array), .index(let idx)):
+                guard idx >= 0, idx < array.count else { return nil }
+                current = array[idx]
+            default:
+                return nil
+            }
+        }
+        return current
+    }
+
+    func stringify(_ value: XADAttributeValue, join: String?) -> String {
+        switch value {
+        case .string(let s):
+            return s
+        case .number(let n):
+            return String(n)
+        case .bool(let b):
+            return b ? "true" : "false"
+        case .null:
+            return "null"
+        case .array(let array):
+            if let join {
+                return array.map { stringify($0, join: nil) }.joined(separator: join)
+            }
+            return jsonString(from: value)
+        case .dictionary:
+            return jsonString(from: value)
+        }
+    }
+
+    func jsonString(from value: XADAttributeValue) -> String {
+        let obj = value.toJSONCompatible()
+        guard YYJSONSerialization.isValidJSONObject(obj),
+              let data = try? YYJSONSerialization.data(withJSONObject: obj, options: []) else {
+            return ""
+        }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    mutating func setTypedPath(_ path: String, value: XADAttributeValue) {
+        guard let segments = parseXADPathSegments(path, env: self), !segments.isEmpty else { return }
+        guard case .key(let root) = segments[0] else { return }
+        let updated = setTypedValue(
+            current: typedValues[root],
+            segments: segments.dropFirst(),
+            value: value
+        )
+        typedValues[root] = updated
+    }
+
+    func setTypedValue(
+        current: XADAttributeValue?,
+        segments: ArraySlice<XADPathSegment>,
+        value: XADAttributeValue
+    ) -> XADAttributeValue {
+        guard let first = segments.first else { return value }
+        let rest = segments.dropFirst()
+
+        switch first {
+        case .key(let key):
+            var dict: [String: XADAttributeValue]
+            if case .dictionary(let existing)? = current {
+                dict = existing
+            } else {
+                dict = [:]
+            }
+            let updated = setTypedValue(current: dict[key], segments: rest, value: value)
+            dict[key] = updated
+            return .dictionary(dict)
+        case .index(let idx):
+            var array: [XADAttributeValue]
+            if case .array(let existing)? = current {
+                array = existing
+            } else {
+                array = []
+            }
+            if idx >= array.count {
+                array.append(contentsOf: repeatElement(.null, count: idx - array.count + 1))
+            }
+            let updated = setTypedValue(current: array[idx], segments: rest, value: value)
+            array[idx] = updated
+            return .array(array)
+        }
+    }
+}
 
 package extension AdocInline {
     func applyingAttributes(using env: AttrEnv) -> AdocInline {
@@ -140,6 +476,11 @@ package extension AdocText {
     }
 }
 
+private func expandRawText(_ text: AdocText, using env: AttrEnv) -> AdocText {
+    let expanded = env.expand(text.plain)
+    return AdocText(inlines: [.text(expanded, span: text.span)], span: text.span)
+}
+
 package extension AdocParagraph {
     func applyingAttributes(using env: AttrEnv) -> AdocParagraph {
         var copy = self
@@ -154,7 +495,7 @@ package extension AdocParagraph {
 package extension AdocListing {
     func applyingAttributes(using env: AttrEnv) -> AdocListing {
         var copy = self
-        copy.text = copy.text.applyingAttributes(using: env)
+        copy.text = expandRawText(copy.text, using: env)
         if let t = copy.title { copy.title = t.applyingAttributes(using: env) }
         if let r = copy.reftext { copy.reftext = r.applyingAttributes(using: env) }
         return copy
@@ -255,7 +596,7 @@ package extension AdocBlock {
             return .verse(vv)
         case .literalBlock(let lb):
             var ll = lb
-            ll.text = ll.text.applyingAttributes(using: env)
+            ll.text = expandRawText(ll.text, using: env)
             if let t = ll.title { ll.title = t.applyingAttributes(using: env) }
             if let r = ll.reftext { ll.reftext = r.applyingAttributes(using: env) }
             return .literalBlock(ll)

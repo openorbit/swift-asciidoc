@@ -387,32 +387,74 @@ public struct AdocAuthor: Sendable, Equatable {
     public var address: String?
 }
 
+public struct AdocRevision: Sendable, Equatable {
+    public var number: String?
+    public var date: String?
+    public var remark: String?
+}
 
 public struct AdocHeader: Sendable, Equatable {
     public var title: AdocText?
     public var authors: [AdocAuthor]? // ISM-native author model
+    public var revisions: [AdocRevision]? // XAD: multiple revision lines
     public var location: AdocLocation? // ISM-native location
 
 }
 
+public struct AdocWarning: Sendable, Equatable {
+    public var message: String
+    public var span: AdocRange?
 
+    public init(message: String, span: AdocRange? = nil) {
+        self.message = message
+        self.span = span
+    }
+}
 
 public struct AdocDocument: Sendable, Equatable {
     public var attributes: [String: String?] = [:]
+    public var typedAttributes: [String: XADAttributeValue] = [:]
     public var header: AdocHeader? = nil
     public var blocks: [AdocBlock] = []
+    public var warnings: [AdocWarning] = []
     public var span: AdocRange?
+    public var xadOptions: XADOptions = .init()
+
+    public init(
+        attributes: [String: String?] = [:],
+        typedAttributes: [String: XADAttributeValue] = [:],
+        header: AdocHeader? = nil,
+        blocks: [AdocBlock] = [],
+        warnings: [AdocWarning] = [],
+        span: AdocRange? = nil,
+        xadOptions: XADOptions = .init()
+    ) {
+        self.attributes = attributes
+        self.typedAttributes = typedAttributes
+        self.header = header
+        self.blocks = blocks
+        self.warnings = warnings
+        self.span = span
+        self.xadOptions = xadOptions
+    }
 
     public init(
         attributes: [String: String?] = [:],
         header: AdocHeader? = nil,
         blocks: [AdocBlock] = [],
-        span: AdocRange? = nil
+        warnings: [AdocWarning] = [],
+        span: AdocRange? = nil,
+        xadOptions: XADOptions = .init()
     ) {
-        self.attributes = attributes
-        self.header = header
-        self.blocks = blocks
-        self.span = span
+        self.init(
+            attributes: attributes,
+            typedAttributes: [:],
+            header: header,
+            blocks: blocks,
+            warnings: warnings,
+            span: span,
+            xadOptions: xadOptions
+        )
     }
 }
 

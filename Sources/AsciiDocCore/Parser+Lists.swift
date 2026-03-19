@@ -103,7 +103,7 @@ extension AdocParser {
     /// IMPORTANT: this function CONSUMES the `.listItem` token.
     private func makeListItem(
         it: inout TokenIter,
-        env: AttrEnv,
+        env: inout AttrEnv,
         markerKey: ListMarkerKey,
         bibliographyStyle: Bool
     ) -> AdocListItem {
@@ -231,7 +231,8 @@ extension AdocParser {
         for marker: ListMarkerKey,
         listKind: AdocListKind,
         it: inout TokenIter,
-        env: AttrEnv,
+        env: inout AttrEnv,
+        warnings: inout [AdocWarning],
         stack: inout [ListMarkerKey],
         bibliographyStyle: Bool = false
     ) -> AdocList? {
@@ -262,7 +263,7 @@ extension AdocParser {
 
                 if key == marker {
                     // Same marker → sibling item on this level
-                    let item = makeListItem(it: &it, env: env, markerKey: key, bibliographyStyle: bibliographyStyle) // consumes token
+                    let item = makeListItem(it: &it, env: &env, markerKey: key, bibliographyStyle: bibliographyStyle) // consumes token
                     items.append(item)
                     continue outer
                 }
@@ -283,7 +284,8 @@ extension AdocParser {
                         for: key,
                         listKind: inferredListKind(from: key),
                         it: &it,
-                        env: env,
+                        env: &env,
+                        warnings: &warnings,
                         stack: &stack,
                         bibliographyStyle: false
                     ) {
@@ -318,7 +320,8 @@ extension AdocParser {
                                 for: key,
                                 listKind: inferredListKind(from: key),
                                 it: &it,
-                                env: env,
+                                env: &env,
+                                warnings: &warnings,
                                 stack: &stack,
                                 bibliographyStyle: false
                             ) {
@@ -326,13 +329,13 @@ extension AdocParser {
                             }
                         } else {
                             // Invalid list marker; fall back to generic block parsing
-                            if let block = parseBlock(it: &it, env: env) {
+                            if let block = parseBlock(it: &it, env: &env, warnings: &warnings) {
                                 lastItem.blocks.append(block)
                             }
                         }
 
                     default:
-                        if let block = parseBlock(it: &it, env: env) {
+                        if let block = parseBlock(it: &it, env: &env, warnings: &warnings) {
                             lastItem.blocks.append(block)
                         }
                     }

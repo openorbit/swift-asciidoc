@@ -1,0 +1,17 @@
+= Trivial Template
+:page.masters: {"default": {"size": "A4", "margins": {"top": "18mm", "right": "18mm", "bottom": "20mm", "left": "18mm"}, "duplex": false}}
+
+[layout]
+----
+// Trivial single-column layout.
+pages[
+  page(master:"default")[
+    stack[
+      flow(slot("title")),
+      flow(slot("abstract")),
+      flow(slot("authors")),
+      flow(slot("main"))
+    ]
+  ]
+]
+----

@@ -19,6 +19,7 @@ let package = Package(
       .library(name: "AsciiDocExtensions", targets: ["AsciiDocExtensions"]),
       .library(name: "AsciiDocTools", targets: ["AsciiDocTools"]),
       .library(name: "AsciiDocAntora", targets: ["AsciiDocAntora"]),
+      .library(name: "AsciiDocPagedRendering", targets: ["AsciiDocPagedRendering"]),
 
       .executable(name: "asciidoc-swift", targets: ["asciidoc-swift"])
     ],
@@ -28,12 +29,15 @@ let package = Package(
         .package(url: "https://github.com/openorbit/swift-hunspell", branch: "main"),
         .package(url: "https://github.com/openorbit/swift-yaml", branch: "main"),
         .package(url: "https://github.com/apple/swift-docc-plugin", from: "1.0.0"),
+        .package(url: "https://github.com/mattt/swift-yyjson.git", from: "0.5.0"),
     ],
     targets: [
         // Core parsing/semantic engine (Foundation + RegexBuilder only)
         .target(
             name: "AsciiDocCore",
-            dependencies: [],
+            dependencies: [
+                .product(name: "YYJSON", package: "swift-yyjson")
+            ],
             path: "Sources/AsciiDocCore",
             swiftSettings: [
                 // Keep indexes Unicode-safe, discourage unsafe operations
@@ -45,6 +49,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Stencil", package: "Stencil"),
                 "AsciiDocCore",
+                "AsciiDocPagedRendering",
             ],
             path: "Sources/AsciiDocRender",
             swiftSettings: [
@@ -81,6 +86,11 @@ let package = Package(
             path: "Sources/AsciiDocAntora"
         ),
 
+        .target(
+            name: "AsciiDocPagedRendering",
+            dependencies: ["AsciiDocCore"],
+            path: "Sources/AsciiDocPagedRendering"
+        ),
 
         // CLI executable that the TCK will invoke
         .executableTarget(
@@ -91,6 +101,7 @@ let package = Package(
                 "AsciiDocExtensions",
                 "AsciiDocTools",
                 "AsciiDocAntora",
+                "AsciiDocPagedRendering",
                 .product(name: "ArgumentParser", package: "swift-argument-parser")
             ],
             path: "Sources/asciidoc-swift",
@@ -105,7 +116,7 @@ let package = Package(
         // Unit tests for the core; add fixture files under Tests/AsciiDocCoreTests/Fixtures as needed
         .testTarget(
             name: "AsciiDocCoreTests",
-            dependencies: ["AsciiDocCore", "AsciiDocTools", "AsciiDocRender"],
+            dependencies: ["AsciiDocCore", "AsciiDocTools", "AsciiDocRender", "AsciiDocPagedRendering"],
             path: "Tests/AsciiDocCoreTests",
             swiftSettings: [
                 .interoperabilityMode(.Cxx)

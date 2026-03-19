@@ -1,0 +1,12 @@
+= Default Template
+:page.masters: {"default": {"size": "A4", "margins": {"top": "18mm", "right": "18mm", "bottom": "20mm", "left": "18mm"}, "duplex": false}}
+
+[layout]
+----
+// Default XAD paged layout
+pages[
+  page(master:"default")[
+    flow(slot("main"))
+  ]
+]
+----

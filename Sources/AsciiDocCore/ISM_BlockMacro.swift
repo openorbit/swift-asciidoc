@@ -6,6 +6,7 @@
 public struct AdocBlockMacro: Sendable, Equatable {
     public var name: String // "include", "image", etc
     public var target: String?
+    public var attributes: [String: String]
     public var id: String?
     public var title: AdocText?
     public var reftext: AdocText?
@@ -15,6 +16,7 @@ public struct AdocBlockMacro: Sendable, Equatable {
     public init(
         name: String,
         target: String? = nil,
+        attributes: [String: String] = [:],
         id: String? = nil,
         title: AdocText? = nil,
         reftext: AdocText? = nil,
@@ -22,6 +24,7 @@ public struct AdocBlockMacro: Sendable, Equatable {
         span: AdocRange? = nil) {
         self.name = name
         self.target = target
+        self.attributes = attributes
         self.id = id
         self.title = title
         self.reftext = reftext

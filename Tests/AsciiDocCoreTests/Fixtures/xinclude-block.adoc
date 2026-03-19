@@ -1,0 +1,5 @@
+macro::shout[params="word"]
+{word}!
+endmacro::shout[]
+
+Included paragraph.

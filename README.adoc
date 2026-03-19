@@ -2,6 +2,32 @@
 
 A swift implementation of AsciiDoc
 
+== XAD Overview
+
+XAD is an opt-in set of extensions that adds structured, JSON-like attributes and layout helpers for paged media output.
+Enable it by passing the `--xad` flag or by using a backend that requires XAD.
+
+Current additions include:
+
+* Typed attributes parsed from JSON/JSON5 values (dictionaries and arrays) in header attribute entries.
+* Multi-line JSON/JSON5 attribute values without explicit continuation escapes.
+* Attribute accessors for nested values (e.g. `foo.bar` and bracket indexing).
+* XAD access macros for nested values (`get::path[]` and `set::path[value]`), plus shorthand access with `{foo.bar}`.
+* User-defined macros (block and inline) with parameters, defaults, and `{body}` substitution for block macros.
+* Macro recursion detection (direct and indirect) with warnings.
+* Macro side-effect allow list via `effects="docpush docset docput"` (or `effects=all`).
+* Control directives: `if`/`elif`/`else`/`end` and `for` loops, with expression validation warnings.
+* Document variables (`docset`, `docpush`, `docput`) for building registries under `doc.*`.
+* Layout-oriented attributes intended for paged and PDF-style renderers.
+* Scoped attributes for block- and section-level overrides.
+
+Scoped attributes:
+
+* `attrpush::[]` and `attrpop::[]` push/pop the attribute environment.
+* `blockattr::[foo=bar]` applies attributes to the next block only.
+* `[blockattr]` followed by a listing-style block of `:name:` entries applies to the next block only.
+* `attrs::[foo=bar]` (or `[attrs]` + listing block) immediately after a section title scopes attributes to that section.
+
 == License
 
 Licensed under the Apache License, Version 2.0.

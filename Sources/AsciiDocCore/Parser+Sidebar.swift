@@ -6,7 +6,8 @@
 extension AdocParser {
     func parseSidebar(
         it: inout TokenIter,
-        env: AttrEnv
+        env: inout AttrEnv,
+        warnings: inout [AdocWarning]
     ) -> AdocSidebar? {
         guard let open = it.peek(),
               case .blockFence(let kind, let fenceLen) = open.kind,
@@ -16,7 +17,7 @@ extension AdocParser {
         it.consume() // consume opening fence
 
         // Parse inner blocks until we see a *matching* sidebar fence
-        let blocks = parseBlocks(it: &it, env: env) { tok in
+        let blocks = parseBlocks(it: &it, env: &env, warnings: &warnings) { tok in
             if case .blockFence(let k, let l) = tok.kind,
                k == .sidebar, l == fenceLen {
                 return true

@@ -1,0 +1,9 @@
+= Double Column Template Example
+
+This example pairs `content.adoc` with the `Templates/xad/double-column-explicit` layout.
+
+To render:
+
+----
+asciidoc-swift xad-paged-html --xad-layout-template double-column-explicit examples/xad/double-column-explicit/content.adoc
+----

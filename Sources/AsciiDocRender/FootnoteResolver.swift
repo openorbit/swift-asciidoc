@@ -34,9 +34,12 @@ public final class FootnoteResolver {
         
         let newDoc = AdocDocument(
             attributes: document.attributes,
+            typedAttributes: document.typedAttributes,
             header: document.header,
             blocks: newBlocks,
-            span: document.span
+            warnings: document.warnings,
+            span: document.span,
+            xadOptions: document.xadOptions
         )
         
         return FootnoteResolution(document: newDoc, definitions: collected)

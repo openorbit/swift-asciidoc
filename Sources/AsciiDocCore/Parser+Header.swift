@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import YYJSON
 
 private struct HeaderAuthorInfo {
     var fullname: String
@@ -25,10 +26,12 @@ extension AdocParser {
     func detectHeader(
         into header: inout AdocHeader?,
         attrs docAttrs: inout [String: String?],
+        typedAttrs: inout [String: XADAttributeValue],
         it: inout TokenIter,
         env: inout AttrEnv,
         lockedAttributes: Set<String>,
-        includeDerivedAttributes: Bool
+        includeDerivedAttributes: Bool,
+        xadOptions: XADOptions
     ) {
         // ——— Header parsing (no blank lines allowed within header) ———
         // Header grammar at top of document:
@@ -43,7 +46,7 @@ extension AdocParser {
             var lastHeaderTok: Token? = nil
             var headerSeen = false
             var parsedAuthors: [HeaderAuthorInfo]? = nil
-            var revisionInfo: HeaderRevisionInfo? = nil
+            var revisions: [HeaderRevisionInfo] = []
 
             // Optional title
             if let tok = it.peek(), case .atxSection(let lvl, let titleRel) = tok.kind, lvl == 0 {
@@ -65,7 +68,7 @@ extension AdocParser {
                 headerSeen = true
             }
 
-            // Optional author/revision line (must be immediately next, no blank in between)
+            // Optional author/revision lines (must be immediately next, no blank in between)
             var consumedAuthorLine = false
             if let tok = it.peek(), case .blank = tok.kind {
                 // blank → header ends; do nothing
@@ -74,15 +77,20 @@ extension AdocParser {
                 let line = env.expand(authorLineRaw).trimmingCharacters(in: .whitespacesAndNewlines)
                 if !line.isEmpty {
                     var handled = false
-                    if parsedAuthors == nil && header?.title != nil {
-                        if let revisionCandidate = parseRevisionLine(line) {
-                            // Only treat as revision if there wasn't an author line and it clearly matches a revision pattern.
-                            revisionInfo = revisionCandidate
-                            it.consume()
-                            lastHeaderTok = tok
-                            headerSeen = true
-                            handled = true
-                        }
+                    if parsedAuthors == nil && header?.title != nil, let revisionCandidate = parseRevisionLine(line) {
+                        // Only treat as revision if there wasn't an author line and it clearly matches a revision pattern.
+                        revisions.append(revisionCandidate)
+                        it.consume()
+                        lastHeaderTok = tok
+                        headerSeen = true
+                        handled = true
+                        consumeRevisionLines(
+                            it: &it,
+                            env: env,
+                            revisions: &revisions,
+                            lastHeaderTok: &lastHeaderTok,
+                            headerSeen: &headerSeen
+                        )
                     }
                     if !handled {
                         let authors = parseAuthorsLine(line)
@@ -112,27 +120,13 @@ extension AdocParser {
             }
 
             if consumedAuthorLine {
-                if let tok = it.peek(), case .blank = tok.kind {
-                    // nothing
-                } else if headerSeen, let tok = it.peek(), case .text(let r) = tok.kind {
-                    let revisionLineRaw = it.textFromRelative(range: r, token: tok)
-                    let revisionLine = env.expand(revisionLineRaw).trimmingCharacters(in: .whitespacesAndNewlines)
-                    if let revision = parseRevisionLine(revisionLine) {
-                        revisionInfo = revision
-                        it.consume()
-                        lastHeaderTok = tok
-                        headerSeen = true
-                    }
-                }
-            } else if revisionInfo == nil, let tok = it.peek(), case .text(let r) = tok.kind, headerSeen {
-                let revisionLineRaw = it.textFromRelative(range: r, token: tok)
-                let revisionLine = env.expand(revisionLineRaw).trimmingCharacters(in: .whitespacesAndNewlines)
-                if let revision = parseRevisionLine(revisionLine) {
-                    revisionInfo = revision
-                    it.consume()
-                    lastHeaderTok = tok
-                    headerSeen = true
-                }
+                consumeRevisionLines(
+                    it: &it,
+                    env: env,
+                    revisions: &revisions,
+                    lastHeaderTok: &lastHeaderTok,
+                    headerSeen: &headerSeen
+                )
             }
 
             // Optional list of attributes (no blank lines allowed within header)
@@ -141,21 +135,41 @@ extension AdocParser {
                 switch tok.kind {
                 case .attrSet(let nameR, let valueR):
                     let name = it.textFromRelative(range: nameR, token: tok)
-                    let value = valueR.map { it.textFromRelative(range: $0, token: tok) }
-                    if !lockedAttributes.contains(name) {
-                        docAttrs[name] = value
-                        env.set(name, to: value)
-                    }
-                    it.consume();
+                    var value = valueR.map { it.textFromRelative(range: $0, token: tok) }
+
+                    it.consume()
                     lastHeaderTok = tok
-                    
                     headerSeen = true
+
+                    if let initial = value {
+                        value = consumeAttributeContinuation(
+                            initial: initial,
+                            it: &it,
+                            lastHeaderTok: &lastHeaderTok
+                        )
+                    }
+
+                    if let raw = value {
+                        value = normalizeXADAttributeValue(raw, xadOptions: xadOptions)
+                    }
+
+                    if let raw = value {
+                        value = consumeAttributeMultilineJSON(
+                            initial: raw,
+                            it: &it,
+                            lastHeaderTok: &lastHeaderTok,
+                            xadOptions: xadOptions
+                        )
+                    }
+
+                    if !lockedAttributes.contains(name) {
+                        env.applyAttributeSet(name: name, value: value)
+                    }
                     continue attrsLoop
                 case .attrUnset(let nameR):
                     let name = it.textFromRelative(range: nameR, token: tok)
                     if !lockedAttributes.contains(name) {
-                        docAttrs[name] = nil
-                        env.set(name, to: nil)
+                        env.applyAttributeUnset(name: name)
                     }
 
                     it.consume();
@@ -174,6 +188,21 @@ extension AdocParser {
 
             // If we produced any part of the header, ensure attributes map is non-nil
             if headerSeen {
+                if !revisions.isEmpty {
+                    if header == nil {
+                        header = AdocHeader(title: nil, authors: nil, location: nil)
+                    }
+                    header!.revisions = revisions.map {
+                        AdocRevision(number: $0.number, date: $0.date, remark: $0.remark)
+                    }
+                    if xadOptions.enabled,
+                       !lockedAttributes.contains("doc.revisions"),
+                       let json = revisionsJSONString(from: revisions) {
+                        env.applyAttributeSet(name: "doc.revisions", value: json)
+                    }
+                }
+                docAttrs = env.values
+                typedAttrs = env.typedValues
                 if docAttrs.isEmpty { docAttrs = [:] }
                 // Ensure we have a header object even if it was attributes-only
                 if header == nil {
@@ -193,15 +222,75 @@ extension AdocParser {
                     applyHeaderDerivedAttributes(
                         header: header,
                         authors: parsedAuthors,
-                        revision: revisionInfo,
+                        revision: revisions.last,
                         attrs: &docAttrs,
                         lockedAttributes: lockedAttributes
                     )
                 }
+                env = AttrEnv(initial: docAttrs, typedAttributes: typedAttrs, xadOptions: xadOptions)
             }
         }
     }
 
+}
+
+private func stripAttributeContinuation(_ value: String) -> (String, Bool) {
+    var end = value.endIndex
+    while end > value.startIndex {
+        let before = value.index(before: end)
+        if value[before].isWhitespace {
+            end = before
+        } else {
+            break
+        }
+    }
+    guard end > value.startIndex else { return (value, false) }
+    let last = value.index(before: end)
+    guard value[last] == "\\" else { return (value, false) }
+    return (String(value[..<last]), true)
+}
+
+private func consumeAttributeContinuation(
+    initial: String,
+    it: inout TokenIter,
+    lastHeaderTok: inout Token?
+) -> String {
+    var result = initial
+    while true {
+        let (stripped, didStrip) = stripAttributeContinuation(result)
+        guard didStrip else { break }
+        result = stripped
+        guard let nextTok = it.peek(), case .text(let r) = nextTok.kind else { break }
+        let nextLine = it.textFromRelative(range: r, token: nextTok)
+        result.append(nextLine)
+        it.consume()
+        lastHeaderTok = nextTok
+    }
+    return result
+}
+
+private func consumeAttributeMultilineJSON(
+    initial: String,
+    it: inout TokenIter,
+    lastHeaderTok: inout Token?,
+    xadOptions: XADOptions
+) -> String {
+    guard consumesMultilineJSON(initial, xadOptions: xadOptions) else { return initial }
+
+    var result = initial
+    while true {
+        guard let nextTok = it.peek(), case .text(let r) = nextTok.kind else { break }
+        let nextLine = it.textFromRelative(range: r, token: nextTok)
+        result.append("\n")
+        result.append(nextLine)
+        it.consume()
+        lastHeaderTok = nextTok
+
+        if !consumesMultilineJSON(result, xadOptions: xadOptions) {
+            break
+        }
+    }
+    return result
 }
 
 private func parseAuthorsLine(_ line: String) -> [HeaderAuthorInfo] {
@@ -252,6 +341,42 @@ private func parseSingleAuthor(_ raw: String) -> HeaderAuthorInfo {
         initials: initials.isEmpty ? nil : initials,
         email: email
     )
+}
+
+private func consumeRevisionLines(
+    it: inout TokenIter,
+    env: AttrEnv,
+    revisions: inout [HeaderRevisionInfo],
+    lastHeaderTok: inout Token?,
+    headerSeen: inout Bool
+) {
+    while let tok = it.peek(), case .text(let r) = tok.kind {
+        let revisionLineRaw = it.textFromRelative(range: r, token: tok)
+        let revisionLine = env.expand(revisionLineRaw).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let revision = parseRevisionLine(revisionLine) else { break }
+        revisions.append(revision)
+        it.consume()
+        lastHeaderTok = tok
+        headerSeen = true
+    }
+}
+
+private func revisionsJSONString(from revisions: [HeaderRevisionInfo]) -> String? {
+    guard !revisions.isEmpty else { return nil }
+    var array: [[String: Any]] = []
+    array.reserveCapacity(revisions.count)
+    for revision in revisions {
+        var obj: [String: Any] = [:]
+        if let number = revision.number { obj["version"] = number }
+        if let date = revision.date { obj["date"] = date }
+        if let remark = revision.remark { obj["remark"] = remark }
+        array.append(obj)
+    }
+    guard YYJSONSerialization.isValidJSONObject(array),
+          let data = try? YYJSONSerialization.data(withJSONObject: array, options: []) else {
+        return nil
+    }
+    return String(data: data, encoding: .utf8)
 }
 
 private func parseRevisionLine(_ rawLine: String) -> HeaderRevisionInfo? {

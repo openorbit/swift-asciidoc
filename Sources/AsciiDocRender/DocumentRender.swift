@@ -5,6 +5,7 @@
 
 import Foundation
 import AsciiDocCore
+import AsciiDocPagedRendering
 
 public struct RenderConfig {
     public var backend: Backend
@@ -12,18 +13,24 @@ public struct RenderConfig {
     public var xrefResolver: XrefResolver?
     public var navigationTree: [String: Any]?
     public var customTemplateName: String?
+    public var xadOptions: XADOptions
+    public var xadLayoutProgram: LayoutProgram?
 
     public init(
         backend: Backend,
         inlineBackend: AdocInlineBackend? = nil,
         xrefResolver: XrefResolver? = nil,
         navigationTree: [String: Any]? = nil,
-        customTemplateName: String? = nil
+        customTemplateName: String? = nil,
+        xadOptions: XADOptions = .init(),
+        xadLayoutProgram: LayoutProgram? = nil
     ) {
         self.backend = backend
         self.xrefResolver = xrefResolver
         self.navigationTree = navigationTree
         self.customTemplateName = customTemplateName
+        self.xadOptions = xadOptions
+        self.xadLayoutProgram = xadLayoutProgram
         self.inlineBackend = inlineBackend ?? {
             switch backend {
             case .html5:    return .html5
@@ -39,6 +46,24 @@ public final class DocumentRenderer {
     private let config: RenderConfig
     private let inlineRenderer: AdocInlineRenderer
     private var calloutSerial: Int = 0
+
+    private enum SlotMode {
+        case move
+        case copy
+    }
+
+    private struct SlotItem {
+        let block: AdocBlock
+        let order: Double
+        let index: Int
+    }
+
+    private struct SlotExtractionResult {
+        var mainBlocks: [AdocBlock]
+        var slots: [String: [SlotItem]]
+        var collections: [String: [SlotItem]]
+        var warnings: [AdocWarning]
+    }
 
     public init(engine: TemplateEngine, config: RenderConfig) {
         self.engine = engine
@@ -71,7 +96,40 @@ public final class DocumentRenderer {
         let docToRender = resolution.document
         let footnotes = resolution.definitions
 
-        let blocks = renderBlocks(docToRender.blocks, context: inlineContext)
+        let slotExtraction: SlotExtractionResult
+        let blocks: [[String: Any]]
+        if config.xadOptions.enabled {
+            slotExtraction = extractSlotsAndCollections(from: docToRender)
+            blocks = renderBlocks(slotExtraction.mainBlocks, context: inlineContext)
+        } else {
+            slotExtraction = SlotExtractionResult(
+                mainBlocks: docToRender.blocks,
+                slots: [:],
+                collections: [:],
+                warnings: []
+            )
+            blocks = renderBlocks(docToRender.blocks, context: inlineContext)
+        }
+
+        var templateDocument: XADTemplateDocument?
+        var templateWarnings: [AdocWarning] = []
+        var layoutProgram = config.xadLayoutProgram
+        if config.xadOptions.enabled, let templatePath = config.xadOptions.templatePath {
+            let templateURL = resolveTemplateURL(
+                templatePath,
+                relativeTo: sourceURL?.deletingLastPathComponent()
+            )
+            let ingestor = XADTemplateIngestor()
+            let (template, warnings) = ingestor.ingestTemplate(
+                at: templateURL,
+                xadOptions: config.xadOptions
+            )
+            templateDocument = template
+            templateWarnings.append(contentsOf: warnings)
+            if let program = template?.layoutProgram {
+                layoutProgram = program
+            }
+        }
 
         let indexResolver = IndexResolver()
         let indexCatalog = indexResolver.resolve(docToRender)
@@ -88,12 +146,66 @@ public final class DocumentRenderer {
             ]
         }
 
+        let typedAttributes = docToRender.typedAttributes.mapValues { $0.toJSONCompatible() }
+        let pagedEnabled = config.xadOptions.pagedJS || isPagedAttributeEnabled(document: docToRender)
+        var xadContext: [String: Any] = [
+            "enabled": config.xadOptions.enabled,
+            "strict": config.xadOptions.strict,
+            "pagedJS": pagedEnabled,
+            "templatePath": config.xadOptions.templatePath ?? "",
+            "layoutTemplate": config.xadOptions.layoutTemplate ?? "",
+            "layoutTemplateBase": config.xadOptions.layoutTemplateBase ?? "",
+            "layoutTemplateSearchPaths": config.xadOptions.layoutTemplateSearchPaths
+        ]
+        if config.xadOptions.enabled {
+            var slotContexts = renderSlotGroups(slotExtraction.slots, context: inlineContext)
+            slotContexts["main"] = blocks
+            let collectionContexts = renderSlotGroups(slotExtraction.collections, context: inlineContext)
+            xadContext["slots"] = slotContexts
+            xadContext["collections"] = collectionContexts
+
+            var warnings = slotExtraction.warnings
+            warnings.append(contentsOf: templateWarnings)
+            if let program = layoutProgram {
+                let evaluator = XADLayoutEvaluator()
+                let evaluation = evaluator.evaluate(
+                    program: program,
+                    slots: slotContexts,
+                    collections: collectionContexts
+                )
+                xadContext["layoutTree"] = evaluation.tree
+                warnings.append(contentsOf: evaluation.warnings)
+            }
+
+            if !warnings.isEmpty {
+                xadContext["warnings"] = warnings.map { $0.message }
+            }
+        }
+        if let program = layoutProgram {
+            xadContext["layoutProgram"] = layoutProgramContext(program)
+        }
+        if let templateDocument {
+            var templateContext: [String: Any] = [
+                "path": templateDocument.url.path,
+                "attributes": templateDocument.attributes,
+                "typedAttributes": templateDocument.typedAttributes.mapValues { $0.toJSONCompatible() },
+                "css": templateDocument.assets.css,
+                "js": templateDocument.assets.js
+            ]
+            if let pageCSS = pageCSS(from: templateDocument) {
+                templateContext["pageCSS"] = pageCSS
+            }
+            xadContext["template"] = templateContext
+        }
+
         var context: [String: Any] = [
             "attributes": docToRender.attributes,
+            "typedAttributes": typedAttributes,
             "headerTitle": docToRender.header?.title?.plain ?? "",
             "blocks": blocks,
             "footnotes": footnotes.map { renderFootnoteDefinition($0, context: inlineContext) },
-            "indexCatalog": indexEntries
+            "indexCatalog": indexEntries,
+            "xad": xadContext
         ]
         
         if let nav = config.navigationTree {
@@ -120,6 +232,78 @@ public final class DocumentRenderer {
             "content": renderInlines(def.content, context: context),
             "textPlain": def.content.plainText()
         ]
+    }
+
+    private func layoutProgramContext(_ program: LayoutProgram) -> [String: Any] {
+        return [
+            "expressions": program.expressions.map { layoutExprContext($0) }
+        ]
+    }
+
+    private func layoutExprContext(_ expr: LayoutExpr) -> [String: Any] {
+        switch expr {
+        case .node(let node):
+            return [
+                "type": "node",
+                "name": node.name,
+                "args": node.args.map { layoutArgContext($0) },
+                "children": node.children.map { layoutExprContext($0) }
+            ]
+        case .value(let value):
+            return [
+                "type": "value",
+                "value": layoutValueContext(value)
+            ]
+        }
+    }
+
+    private func layoutArgContext(_ arg: LayoutArg) -> [String: Any] {
+        return [
+            "name": arg.name ?? "",
+            "named": arg.name != nil,
+            "value": layoutExprContext(arg.value)
+        ]
+    }
+
+    private func layoutValueContext(_ value: LayoutValue) -> Any {
+        switch value {
+        case .string(let string):
+            return string
+        case .number(let number):
+            return number
+        case .boolean(let boolean):
+            return boolean
+        case .null:
+            return NSNull()
+        case .array(let values):
+            return values.map { layoutValueContext($0) }
+        case .dict(let dict):
+            var out: [String: Any] = [:]
+            for (key, entry) in dict {
+                out[key] = layoutValueContext(entry)
+            }
+            return out
+        case .ref(let ref):
+            var payload: [String: Any] = [
+                "type": "ref",
+                "parts": ref.parts
+            ]
+            if let index = ref.index {
+                payload["index"] = layoutIndexContext(index)
+            }
+            return payload
+        }
+    }
+
+    private func layoutIndexContext(_ index: LayoutIndex) -> Any {
+        switch index {
+        case .number(let number):
+            return ["type": "number", "value": number]
+        case .string(let string):
+            return ["type": "string", "value": string]
+        case .identifier(let ident):
+            return ["type": "identifier", "value": ident]
+        }
     }
 
     private func renderBlocks(_ blocks: [AdocBlock], context: InlineContext) -> [[String: Any]] {
@@ -471,6 +655,347 @@ public final class DocumentRenderer {
             "id": blockIdentifier(item.id, meta: item.meta),
             "meta": metaContext(item.meta)
         ]
+    }
+
+    private func renderSlotGroups(_ groups: [String: [SlotItem]], context: InlineContext) -> [String: [[String: Any]]] {
+        var rendered: [String: [[String: Any]]] = [:]
+        for (name, items) in groups {
+            let sorted = items.sorted {
+                if $0.order == $1.order { return $0.index < $1.index }
+                return $0.order < $1.order
+            }
+            let slotBlocks = sorted.map { $0.block }
+            rendered[name] = renderBlocks(slotBlocks, context: context)
+        }
+        return rendered
+    }
+
+    private func extractSlotsAndCollections(from document: AdocDocument) -> SlotExtractionResult {
+        var slots: [String: [SlotItem]] = [:]
+        var collections: [String: [SlotItem]] = [:]
+        var warnings: [AdocWarning] = []
+        var slotModeCache: [String: SlotMode] = [:]
+        var index = 0
+
+        func attributeValue(_ name: String) -> String? {
+            guard let value = document.attributes[name] else { return nil }
+            return value ?? ""
+        }
+
+        func slotMode(for slot: String) -> SlotMode {
+            if let cached = slotModeCache[slot] { return cached }
+            let raw = attributeValue("slot.mode.\(slot)") ?? attributeValue("slot.mode.default")
+            let mode: SlotMode
+            if let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+                switch raw.lowercased() {
+                case "move":
+                    mode = .move
+                case "copy":
+                    mode = .copy
+                default:
+                    warnings.append(AdocWarning(message: "Invalid slot.mode value '\(raw)' for '\(slot)'; defaulting to move."))
+                    mode = .move
+                }
+            } else {
+                mode = .move
+            }
+            slotModeCache[slot] = mode
+            return mode
+        }
+
+        func parseOrder(_ raw: String?, context: String, span: AdocRange?) -> Double {
+            guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+                return 0
+            }
+            if let value = Double(raw) {
+                return value
+            }
+            warnings.append(AdocWarning(message: "Invalid order '\(raw)' for \(context); defaulting to 0.", span: span))
+            return 0
+        }
+
+        func normalizedName(_ raw: String?) -> String? {
+            guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+                return nil
+            }
+            return raw
+        }
+
+        func addSlot(_ name: String, block: AdocBlock, order: Double, index: Int) {
+            slots[name, default: []].append(SlotItem(block: block, order: order, index: index))
+        }
+
+        func addCollection(_ name: String, block: AdocBlock, order: Double, index: Int) {
+            collections[name, default: []].append(SlotItem(block: block, order: order, index: index))
+        }
+
+        func isAbstractBlock(_ meta: AdocBlockMeta) -> Bool {
+            if let style = meta.attributes["style"], style.lowercased() == "abstract" {
+                return true
+            }
+            return meta.roles.contains { $0.lowercased() == "abstract" }
+        }
+
+        func isBibliographyBlock(_ meta: AdocBlockMeta) -> Bool {
+            if let style = meta.attributes["style"], style.lowercased() == "bibliography" {
+                return true
+            }
+            return meta.roles.contains { $0.lowercased() == "bibliography" }
+        }
+
+        func inferredSlotName(for meta: AdocBlockMeta) -> String? {
+            if isAbstractBlock(meta) { return "abstract" }
+            if isBibliographyBlock(meta) { return "bibliography" }
+            return nil
+        }
+
+        func extractBlocks(_ blocks: [AdocBlock]) -> [AdocBlock] {
+            var out: [AdocBlock] = []
+            for block in blocks {
+                if let extracted = extractBlock(block) {
+                    out.append(extracted)
+                }
+            }
+            return out
+        }
+
+        func extractBlock(_ block: AdocBlock) -> AdocBlock? {
+            let meta = blockMeta(block)
+            let slotName = normalizedName(meta.attributes["slot"])
+            let collectionName = normalizedName(meta.attributes["collect"])
+            let inferredSlot = slotName == nil && collectionName == nil ? inferredSlotName(for: meta) : nil
+            let orderContext = slotName ?? collectionName ?? inferredSlot ?? "main"
+            let order = parseOrder(meta.attributes["order"], context: orderContext, span: meta.span)
+            index += 1
+            let currentIndex = index
+
+            if let collectionName {
+                addCollection(collectionName, block: block, order: order, index: currentIndex)
+            }
+
+            let effectiveSlot = slotName ?? inferredSlot ?? "main"
+            if effectiveSlot != "main" {
+                addSlot(effectiveSlot, block: block, order: order, index: currentIndex)
+            }
+
+            let shouldMove = effectiveSlot != "main" && slotMode(for: effectiveSlot) == .move
+            if shouldMove {
+                return nil
+            }
+
+            if slotName != nil || collectionName != nil || inferredSlot != nil {
+                return block
+            }
+
+            switch block {
+            case .section(var s):
+                s.blocks = extractBlocks(s.blocks)
+                return .section(s)
+            case .sidebar(var s):
+                s.blocks = extractBlocks(s.blocks)
+                return .sidebar(s)
+            case .example(var e):
+                e.blocks = extractBlocks(e.blocks)
+                return .example(e)
+            case .quote(var q):
+                q.blocks = extractBlocks(q.blocks)
+                return .quote(q)
+            case .open(var o):
+                o.blocks = extractBlocks(o.blocks)
+                return .open(o)
+            case .admonition(var a):
+                a.blocks = extractBlocks(a.blocks)
+                return .admonition(a)
+            case .verse(var v):
+                v.blocks = extractBlocks(v.blocks)
+                return .verse(v)
+            case .list(var l):
+                l.items = l.items.map { item in
+                    var updated = item
+                    updated.blocks = extractBlocks(item.blocks)
+                    return updated
+                }
+                return .list(l)
+            case .dlist(var d):
+                d.items = d.items.map { item in
+                    var updated = item
+                    updated.blocks = extractBlocks(item.blocks)
+                    return updated
+                }
+                return .dlist(d)
+            default:
+                return block
+            }
+        }
+
+        func makeParagraph(_ text: String, roles: [String]) -> AdocParagraph {
+            var meta = AdocBlockMeta()
+            meta.roles = roles
+            return AdocParagraph(text: AdocText(plain: text), meta: meta)
+        }
+
+        func addHeaderSlotsIfMissing() {
+            if (slots["title"]?.isEmpty ?? true),
+               let titleText = document.header?.title?.plain ?? attributeValue("doctitle"),
+               !titleText.isEmpty {
+                index += 1
+                let titlePara = makeParagraph(titleText, roles: ["doc-title"])
+                addSlot("title", block: .paragraph(titlePara), order: 0, index: index)
+            }
+
+            if (slots["authors"]?.isEmpty ?? true) {
+                if let headerAuthors = document.header?.authors, !headerAuthors.isEmpty {
+                    for author in headerAuthors {
+                        let text = formatAuthor(author)
+                        if text.isEmpty { continue }
+                        index += 1
+                        let authorPara = makeParagraph(text, roles: ["author"])
+                        addSlot("authors", block: .paragraph(authorPara), order: 0, index: index)
+                    }
+                } else if let raw = attributeValue("author"), !raw.isEmpty {
+                    index += 1
+                    let authorPara = makeParagraph(raw, roles: ["author"])
+                    addSlot("authors", block: .paragraph(authorPara), order: 0, index: index)
+                }
+            }
+        }
+
+        let mainBlocks = extractBlocks(document.blocks)
+        addHeaderSlotsIfMissing()
+        return SlotExtractionResult(
+            mainBlocks: mainBlocks,
+            slots: slots,
+            collections: collections,
+            warnings: warnings
+        )
+    }
+
+    private func blockMeta(_ block: AdocBlock) -> AdocBlockMeta {
+        switch block {
+        case .section(let s): return s.meta
+        case .paragraph(let p): return p.meta
+        case .listing(let l): return l.meta
+        case .list(let l): return l.meta
+        case .dlist(let d): return d.meta
+        case .discreteHeading(let h): return h.meta
+        case .sidebar(let s): return s.meta
+        case .example(let e): return e.meta
+        case .quote(let q): return q.meta
+        case .open(let o): return o.meta
+        case .admonition(let a): return a.meta
+        case .verse(let v): return v.meta
+        case .literalBlock(let l): return l.meta
+        case .table(let t): return t.meta
+        case .math(let m): return m.meta
+        case .blockMacro(let m): return m.meta
+        }
+    }
+
+    private func resolveTemplateURL(_ raw: String, relativeTo baseURL: URL?) -> URL {
+        let base = baseURL ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        return URL(fileURLWithPath: raw, relativeTo: base).standardizedFileURL
+    }
+
+    private func isPagedAttributeEnabled(document: AdocDocument) -> Bool {
+        if let typed = document.typedAttributes["paged"] {
+            return isTruthy(typed)
+        }
+        if let raw = document.attributes["paged"] {
+            return isTruthy(raw)
+        }
+        return false
+    }
+
+    private func pageCSS(from template: XADTemplateDocument) -> String? {
+        guard let mastersValue = template.typedAttributes["page.masters"] else { return nil }
+        guard case .dictionary(let masters) = mastersValue else { return nil }
+        guard case .dictionary(let defaultMaster) = masters["default"] else { return nil }
+
+        let size: String?
+        if case .string(let rawSize)? = defaultMaster["size"] {
+            size = rawSize
+        } else {
+            size = nil
+        }
+
+        var marginParts: [String] = []
+        if case .dictionary(let margins)? = defaultMaster["margins"] {
+            let top = stringValue(margins["top"])
+            let right = stringValue(margins["right"]) ?? stringValue(margins["outer"])
+            let bottom = stringValue(margins["bottom"])
+            let left = stringValue(margins["left"]) ?? stringValue(margins["inner"])
+            if let top, let right, let bottom, let left {
+                marginParts = [top, right, bottom, left]
+            }
+        }
+
+        guard size != nil || !marginParts.isEmpty else { return nil }
+        var lines: [String] = ["@page {"]
+        if let size {
+            lines.append("  size: \(size);")
+        }
+        if !marginParts.isEmpty {
+            lines.append("  margin: \(marginParts.joined(separator: " "));")
+        }
+        lines.append("}")
+        return lines.joined(separator: "\n")
+    }
+
+    private func formatAuthor(_ author: AdocAuthor) -> String {
+        if let fullname = author.fullname, !fullname.isEmpty {
+            return appendAddress(fullname, address: author.address)
+        }
+        let parts = [author.firstname, author.middlename, author.lastname].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        if !parts.isEmpty {
+            return appendAddress(parts.joined(separator: " "), address: author.address)
+        }
+        if let initials = author.initials, !initials.isEmpty {
+            return appendAddress(initials, address: author.address)
+        }
+        return ""
+    }
+
+    private func appendAddress(_ name: String, address: String?) -> String {
+        guard let address, !address.isEmpty else { return name }
+        return "\(name) <\(address)>"
+    }
+
+    private func stringValue(_ value: XADAttributeValue?) -> String? {
+        if case .string(let raw)? = value {
+            return raw
+        }
+        return nil
+    }
+
+    private func isTruthy(_ value: XADAttributeValue) -> Bool {
+        switch value {
+        case .bool(let b):
+            return b
+        case .number(let n):
+            return n != 0
+        case .string(let s):
+            return isTruthy(s)
+        case .null:
+            return false
+        case .array(let arr):
+            return !arr.isEmpty
+        case .dictionary(let dict):
+            return !dict.isEmpty
+        }
+    }
+
+    private func isTruthy(_ value: String?) -> Bool {
+        guard let value else { return false }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return true }
+        switch trimmed.lowercased() {
+        case "true", "yes", "on", "1":
+            return true
+        case "false", "no", "off", "0":
+            return false
+        default:
+            return true
+        }
     }
 
     private func renderInlines(_ inlines: [AdocInline], context: InlineContext) -> String {

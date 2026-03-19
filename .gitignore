@@ -11,3 +11,4 @@ DerivedData/
 artifacts/
 .vscode
 .cache
+.swiftpm
