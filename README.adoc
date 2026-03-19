@@ -21,6 +21,14 @@ Current additions include:
 * Layout-oriented attributes intended for paged and PDF-style renderers.
 * Scoped attributes for block- and section-level overrides.
 
+Scoped attributes:
+
+* `attrpush::[]` and `attrpop::[]` push/pop the attribute environment.
+* `blockattr::[foo=bar]` applies attributes to the next block only.
+* `[blockattr]` followed by a listing-style block of `:name:` entries applies to the next block only.
+* `attrs::[foo=bar]` (or `[attrs]` + listing block) immediately after a section title scopes attributes to that section.
+
+
 == Music Extensions
 
 The project also has an HTML-oriented music workflow built around three pieces:
@@ -99,13 +107,6 @@ chord::G[frets="3 2 0 0 0 3",fingers="2 1 0 0 0 3"]
 ....
 
 If explicit fingering is present, it wins over the built-in chord library.
-
-Scoped attributes:
-
-* `attrpush::[]` and `attrpop::[]` push/pop the attribute environment.
-* `blockattr::[foo=bar]` applies attributes to the next block only.
-* `[blockattr]` followed by a listing-style block of `:name:` entries applies to the next block only.
-* `attrs::[foo=bar]` (or `[attrs]` + listing block) immediately after a section title scopes attributes to that section.
 
 == License
 
