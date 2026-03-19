@@ -122,7 +122,11 @@ That [G]saved a [D]wretch li[Cm]ke [G]me
 
 == Chord Diagram
 
-chord::G[frets="3 2 0 0 0 3",fingers="2 1 0 0 0 3",instrument=guitar]
+chord::G[]
+
+chord::D5[tuning=drop-d]
+
+chord::Dsus4[tuning=dadgad]
 
 == Inline Math
 

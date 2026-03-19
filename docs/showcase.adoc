@@ -2,7 +2,7 @@
 
 The `examples/showcase.adoc` document exercises the features that we most often want to eyeball—lists,
 description lists, verbatim listings with callouts, PlantUML diagrams,
-ABC scores, lyrics with chords, chord diagrams, tables, and inline math.
+ABC scores, lyrics with chords, chord diagrams with built-in voicings for standard, drop-d, and dadgad guitar, tables, and inline math.
 
 Run `scripts/render-showcase.sh` to render that document with every backend:
 

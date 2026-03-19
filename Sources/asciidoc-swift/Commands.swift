@@ -686,7 +686,8 @@ struct Antora: AsyncParsableCommand {
             inlineBackend: nil, 
             xrefResolver: xrefResolver, 
             navigationTree: navDict,
-            customTemplateName: "antora/document.stencil"
+            customTemplateName: "antora/document.stencil",
+            blockMacroResolvers: [MusicBlockMacroResolver()]
         )
         
         let renderer = DocumentRenderer(engine: engine, config: config)
@@ -892,6 +893,7 @@ private func renderDocument(
         config: RenderConfig(
             backend: backend,
             xadOptions: xadOptions,
+            blockMacroResolvers: [MusicBlockMacroResolver()]
         )
     )
     let rendered = try renderer.render(document: doc)

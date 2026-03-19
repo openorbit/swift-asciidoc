@@ -116,7 +116,7 @@ let package = Package(
         // Unit tests for the core; add fixture files under Tests/AsciiDocCoreTests/Fixtures as needed
         .testTarget(
             name: "AsciiDocCoreTests",
-            dependencies: ["AsciiDocCore", "AsciiDocTools", "AsciiDocRender", "AsciiDocPagedRendering"],
+            dependencies: ["AsciiDocCore", "AsciiDocExtensions", "AsciiDocTools", "AsciiDocRender", "AsciiDocPagedRendering"],
             path: "Tests/AsciiDocCoreTests",
             swiftSettings: [
                 .interoperabilityMode(.Cxx)

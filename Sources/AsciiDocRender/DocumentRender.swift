@@ -15,6 +15,7 @@ public struct RenderConfig {
     public var customTemplateName: String?
     public var xadOptions: XADOptions
     public var xadLayoutProgram: LayoutProgram?
+    public var blockMacroResolvers: [any BlockMacroResolver]
 
     public init(
         backend: Backend,
@@ -23,7 +24,8 @@ public struct RenderConfig {
         navigationTree: [String: Any]? = nil,
         customTemplateName: String? = nil,
         xadOptions: XADOptions = .init(),
-        xadLayoutProgram: LayoutProgram? = nil
+        xadLayoutProgram: LayoutProgram? = nil,
+        blockMacroResolvers: [any BlockMacroResolver] = []
     ) {
         self.backend = backend
         self.xrefResolver = xrefResolver
@@ -31,6 +33,7 @@ public struct RenderConfig {
         self.customTemplateName = customTemplateName
         self.xadOptions = xadOptions
         self.xadLayoutProgram = xadLayoutProgram
+        self.blockMacroResolvers = blockMacroResolvers
         self.inlineBackend = inlineBackend ?? {
             switch backend {
             case .html5:    return .html5
@@ -535,6 +538,10 @@ public final class DocumentRenderer {
             for (key, value) in m.meta.attributes {
                 macroAttributes[key] = value
             }
+            let resolverContext = resolveBlockMacroContext(m, attributes: macroAttributes)
+            if let resolvedAttributes = resolverContext["attributes"] as? [String: String] {
+                macroAttributes = resolvedAttributes
+            }
             let altText = macroAttributes["alt"] ?? macroAttributes["1"] ?? m.title?.plain ?? ""
             if m.name == "lyrics" {
                 let lyrics = parseLyrics(target: m.target ?? "", chordsEnabled: isTruthy(macroAttributes["chords"]))
@@ -554,7 +561,7 @@ public final class DocumentRenderer {
                     "lines": lyrics.lines,
                     "hasChords": lyrics.hasChords,
                     "part": macroAttributes["part"] ?? ""
-                ]
+                ].merging(resolverContext, uniquingKeysWith: { _, new in new })
             }
             return [
                 "kind": "blockMacro",
@@ -569,7 +576,7 @@ public final class DocumentRenderer {
                 "roleClass": m.meta.roles.joined(separator: " "),
                 "id": blockIdentifier(m.id, meta: m.meta),
                 "meta": metaContext(m.meta)
-            ]
+            ].merging(resolverContext, uniquingKeysWith: { _, new in new })
         }
     }
 
@@ -1137,6 +1144,17 @@ public final class DocumentRenderer {
             "roleClass": meta.roles.joined(separator: " "),
             "id": meta.id ?? ""
         ]
+    }
+
+    private func resolveBlockMacroContext(_ blockMacro: AdocBlockMacro, attributes: [String: String]) -> [String: Any] {
+        var context: [String: Any] = [:]
+        for resolver in config.blockMacroResolvers {
+            guard let resolved = resolver.resolve(blockMacro: blockMacro, attributes: attributes) else {
+                continue
+            }
+            context.merge(resolved, uniquingKeysWith: { _, new in new })
+        }
+        return context
     }
 
     private func parseLyrics(target: String, chordsEnabled: Bool) -> (lines: [[String: Any]], hasChords: Bool) {
