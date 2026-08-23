@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.3
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -20,8 +20,10 @@ let package = Package(
       .library(name: "AsciiDocTools", targets: ["AsciiDocTools"]),
       .library(name: "AsciiDocAntora", targets: ["AsciiDocAntora"]),
       .library(name: "AsciiDocPagedRendering", targets: ["AsciiDocPagedRendering"]),
+      .library(name: "AsciiDocBlockEditor", targets: ["AsciiDocBlockEditor"]),
 
-      .executable(name: "asciidoc-swift", targets: ["asciidoc-swift"])
+      .executable(name: "asciidoc-swift", targets: ["asciidoc-swift"]),
+      .executable(name: "asciidoc-block-editor-example", targets: ["AsciiDocBlockEditorExample"])
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.3.0"),
@@ -91,6 +93,13 @@ let package = Package(
             dependencies: ["AsciiDocCore"],
             path: "Sources/AsciiDocPagedRendering"
         ),
+        .target(
+            name: "AsciiDocBlockEditor",
+            dependencies: [
+                "AsciiDocCore"
+            ],
+            path: "Sources/AsciiDocBlockEditor"
+        ),
 
         // CLI executable that the TCK will invoke
         .executableTarget(
@@ -111,6 +120,13 @@ let package = Package(
             swiftSettings: [
                 .interoperabilityMode(.Cxx)
             ]
+        ),
+        .executableTarget(
+            name: "AsciiDocBlockEditorExample",
+            dependencies: [
+                "AsciiDocBlockEditor"
+            ],
+            path: "Sources/AsciiDocBlockEditorExample"
         ),
 
         // Unit tests for the core; add fixture files under Tests/AsciiDocCoreTests/Fixtures as needed
@@ -138,6 +154,11 @@ let package = Package(
             swiftSettings: [
                 .interoperabilityMode(.Cxx)
             ]
+        ),
+        .testTarget(
+            name: "AsciiDocBlockEditorTests",
+            dependencies: ["AsciiDocBlockEditor", "AsciiDocCore"],
+            path: "Tests/AsciiDocBlockEditorTests"
         )
     ]
 )

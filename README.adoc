@@ -55,6 +55,27 @@ To generate documentation:
 swift package generate-documentation
 ----
 
+== Block Editor
+
+The package now includes an experimental `AsciiDocBlockEditor` library target for Apple platforms.
+It uses SwiftUI to provide a structural WYSIWYM editor over the ISM (`AdocDocument`) model with:
+
+* A compact inline-format toolbar for emphasis, strong, code, and mark spans
+* Block insertion for headings, paragraphs, lists, description lists, listings, equations, tables, and admonitions
+* Direct mutation of the parsed document model instead of a separate preview-oriented editor representation
+* Import from the existing parser so the editor can start from the current AsciiDoc pipeline
+
+The current interaction goals are captured in `Specs/AsciiDoc_Block_Editor_Draft_Specification.md`.
+
+There is also a sample executable target:
+
+[source,bash]
+----
+swift run asciidoc-block-editor-example
+----
+
+On non-Apple platforms the target graph still resolves, but the editor UI and sample app only activate when SwiftUI is available.
+
 == Dependencies
 
 * https://github.com/apple/swift-argument-parser[swift-argument-parser]

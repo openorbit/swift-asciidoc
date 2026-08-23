@@ -29,7 +29,7 @@ struct TableTests {
             #expect(table.separator == "|")
 
             // Row and cell parsing
-            #expect(table.rows == ["| Cell A | Cell B"])
+            #expect(table.rawRows == ["| Cell A | Cell B "])
 
             let cells = table.cells
             #expect(cells.count == 1)
@@ -78,7 +78,7 @@ struct TableTests {
             #expect(table.styleChar == "|")
 
             // One data row
-            #expect(table.rows == ["| Cell A | Cell B"])
+            #expect(table.rawRows == ["| Cell A | Cell B "])
 
             let cells = table.cells
             #expect(cells.count == 1)
@@ -125,7 +125,7 @@ struct TableTests {
             #expect(table.separator == "|")
 
             // Raw row
-            #expect(table.rows == ["| A\\|B | C\\\\D"])
+            #expect(table.rawRows == ["| A\\|B | C\\\\D "])
 
             let cells = table.cells
             #expect(cells.count == 1)
@@ -160,7 +160,7 @@ struct TableTests {
             #expect(table.format == .csv)
             #expect(table.separator == ",")
             #expect(table.styleChar == ",")
-            #expect(table.rows == ["a,b,c"])
+            #expect(table.rawRows == ["a,b,c"])
         }
 
         @Test
@@ -184,7 +184,7 @@ struct TableTests {
             #expect(table.format == .csv)
             #expect(table.separator == ",")
 
-            #expect(table.rows == ["a,b,,d"])
+            #expect(table.rawRows == ["a,b,,d"])
 
             let cells = table.cells
             #expect(cells.count == 1)
@@ -241,7 +241,7 @@ struct TableTests {
             #expect(table.separator == ":")
 
 
-            #expect(table.rows == ["a:b::d"])
+            #expect(table.rawRows == ["a:b::d"])
 
             let cells = table.cells
             #expect(cells.count == 1)
@@ -271,7 +271,7 @@ struct TableTests {
             #expect(table.format == .csv)
             #expect(table.separator == ";")
 
-            #expect(table.rows == ["a;b;c"])
+            #expect(table.rawRows == ["a;b;c"])
             let cells = table.cells
             #expect(cells.count == 1)
             #expect(cells[0] == ["a", "b", "c"])
@@ -600,8 +600,29 @@ struct TableTests {
             // Expecting valid AsciiDoc table output
             let output = table.renderAsAsciiDoc()
             #expect(output.contains("|==="))
-            #expect(output.contains("|Cell A|Cell B"))
-            #expect(output.contains("|Cell C|Cell D"))
+            #expect(output.contains("| Cell A | Cell B"))
+            #expect(output.contains("| Cell C | Cell D"))
+        }
+
+        @Test
+        func structured_rows_are_the_authoritative_model() {
+            var table = AdocTable(rows: [
+                AdocTableRow(cells: [
+                    AdocTableCell(text: "A"),
+                    AdocTableCell(text: "B")
+                ], isHeader: true),
+                AdocTableRow(cells: [
+                    AdocTableCell(text: "1"),
+                    AdocTableCell(text: "2")
+                ])
+            ], headerRowCount: 1)
+
+            table.rows[1].cells[0].text = "changed"
+
+            #expect(table.cells == [["A", "B"], ["changed", "2"]])
+            #expect(table.rows[0].isHeader)
+            #expect(!table.rows[1].isHeader)
+            #expect(table.renderAsAsciiDoc().contains("| changed | 2"))
         }
     }
 }

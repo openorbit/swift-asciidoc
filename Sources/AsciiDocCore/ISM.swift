@@ -202,6 +202,24 @@ public struct AdocSection: Sendable, Equatable {
     public var reftext: AdocText?
     public var meta: AdocBlockMeta = .init()
     public var span: AdocRange?
+
+    public init(
+        level: Int,
+        title: AdocText,
+        blocks: [AdocBlock] = [],
+        id: String? = nil,
+        reftext: AdocText? = nil,
+        meta: AdocBlockMeta = .init(),
+        span: AdocRange? = nil
+    ) {
+        self.level = level
+        self.title = title
+        self.blocks = blocks
+        self.id = id
+        self.reftext = reftext
+        self.meta = meta
+        self.span = span
+    }
 }
 
 public struct AdocParagraph: Sendable, Equatable {
@@ -237,6 +255,24 @@ public struct AdocListing: Sendable, Equatable {
     public var reftext: AdocText?
     public var meta: AdocBlockMeta = .init()
     public var span: AdocRange?
+
+    public init(
+        text: AdocText,
+        delimiter: String? = "----",
+        id: String? = nil,
+        title: AdocText? = nil,
+        reftext: AdocText? = nil,
+        meta: AdocBlockMeta = .init(),
+        span: AdocRange? = nil
+    ) {
+        self.text = text
+        self.delimiter = delimiter
+        self.id = id
+        self.title = title
+        self.reftext = reftext
+        self.meta = meta
+        self.span = span
+    }
 }
 
 public enum AdocListKind: Sendable, Equatable {
@@ -254,6 +290,26 @@ public struct AdocListItem: Sendable, Equatable {
     public var reftext: AdocText?
     public var meta: AdocBlockMeta = .init()
     public var span: AdocRange?
+
+    public init(
+        marker: String,
+        principal: AdocText,
+        blocks: [AdocBlock] = [],
+        id: String? = nil,
+        title: AdocText? = nil,
+        reftext: AdocText? = nil,
+        meta: AdocBlockMeta = .init(),
+        span: AdocRange? = nil
+    ) {
+        self.marker = marker
+        self.principal = principal
+        self.blocks = blocks
+        self.id = id
+        self.title = title
+        self.reftext = reftext
+        self.meta = meta
+        self.span = span
+    }
 }
 
 public struct AdocList: Sendable, Equatable {
@@ -264,6 +320,24 @@ public struct AdocList: Sendable, Equatable {
     public var reftext: AdocText?
     public var meta: AdocBlockMeta = .init()
     public var span: AdocRange?
+
+    public init(
+        kind: AdocListKind,
+        items: [AdocListItem],
+        id: String? = nil,
+        title: AdocText? = nil,
+        reftext: AdocText? = nil,
+        meta: AdocBlockMeta = .init(),
+        span: AdocRange? = nil
+    ) {
+        self.kind = kind
+        self.items = items
+        self.id = id
+        self.title = title
+        self.reftext = reftext
+        self.meta = meta
+        self.span = span
+    }
 }
 
 public struct AdocDListItem: Sendable, Equatable {
@@ -281,6 +355,26 @@ public struct AdocDListItem: Sendable, Equatable {
     public var reftext: AdocText?
     public var meta: AdocBlockMeta = .init()
     public var span: AdocRange?
+
+    public init(
+        term: AdocText,
+        principal: AdocText? = nil,
+        blocks: [AdocBlock] = [],
+        id: String? = nil,
+        title: AdocText? = nil,
+        reftext: AdocText? = nil,
+        meta: AdocBlockMeta = .init(),
+        span: AdocRange? = nil
+    ) {
+        self.term = term
+        self.principal = principal
+        self.blocks = blocks
+        self.id = id
+        self.title = title
+        self.reftext = reftext
+        self.meta = meta
+        self.span = span
+    }
 }
 
 public struct AdocDList: Sendable, Equatable {
@@ -291,6 +385,24 @@ public struct AdocDList: Sendable, Equatable {
     public var reftext: AdocText?
     public var meta: AdocBlockMeta = .init()
     public var span: AdocRange?
+
+    public init(
+        marker: String = "::",
+        items: [AdocDListItem],
+        id: String? = nil,
+        title: AdocText? = nil,
+        reftext: AdocText? = nil,
+        meta: AdocBlockMeta = .init(),
+        span: AdocRange? = nil
+    ) {
+        self.marker = marker
+        self.items = items
+        self.id = id
+        self.title = title
+        self.reftext = reftext
+        self.meta = meta
+        self.span = span
+    }
 }
 
 public struct AdocDiscreteHeading: Sendable, Equatable {
@@ -300,6 +412,22 @@ public struct AdocDiscreteHeading: Sendable, Equatable {
     public var reftext: AdocText?
     public var meta: AdocBlockMeta = .init()
     public var span: AdocRange?
+
+    public init(
+        level: Int,
+        title: AdocText,
+        id: String? = nil,
+        reftext: AdocText? = nil,
+        meta: AdocBlockMeta = .init(),
+        span: AdocRange? = nil
+    ) {
+        self.level = level
+        self.title = title
+        self.id = id
+        self.reftext = reftext
+        self.meta = meta
+        self.span = span
+    }
 }
 
 public struct AdocSidebar: Sendable, Equatable {
@@ -310,6 +438,24 @@ public struct AdocSidebar: Sendable, Equatable {
     public var reftext: AdocText?
     public var meta: AdocBlockMeta = .init()
     public var span: AdocRange?
+
+    public init(
+        blocks: [AdocBlock],
+        delimiter: String? = "****",
+        id: String? = nil,
+        title: AdocText? = nil,
+        reftext: AdocText? = nil,
+        meta: AdocBlockMeta = .init(),
+        span: AdocRange? = nil
+    ) {
+        self.blocks = blocks
+        self.delimiter = delimiter
+        self.id = id
+        self.title = title
+        self.reftext = reftext
+        self.meta = meta
+        self.span = span
+    }
 }
 
 public struct AdocExample: Sendable, Equatable {
@@ -320,6 +466,24 @@ public struct AdocExample: Sendable, Equatable {
     public var reftext: AdocText?
     public var meta: AdocBlockMeta = .init()
     public var span: AdocRange?
+
+    public init(
+        blocks: [AdocBlock],
+        delimiter: String? = "====",
+        id: String? = nil,
+        title: AdocText? = nil,
+        reftext: AdocText? = nil,
+        meta: AdocBlockMeta = .init(),
+        span: AdocRange? = nil
+    ) {
+        self.blocks = blocks
+        self.delimiter = delimiter
+        self.id = id
+        self.title = title
+        self.reftext = reftext
+        self.meta = meta
+        self.span = span
+    }
 }
 
 public struct AdocQuote: Sendable, Equatable {
@@ -332,6 +496,28 @@ public struct AdocQuote: Sendable, Equatable {
     public var citetitle: AdocText?      // Optional work title line
     public var meta: AdocBlockMeta = .init()
     public var span: AdocRange?
+
+    public init(
+        blocks: [AdocBlock],
+        delimiter: String? = "____",
+        id: String? = nil,
+        title: AdocText? = nil,
+        reftext: AdocText? = nil,
+        attribution: AdocText? = nil,
+        citetitle: AdocText? = nil,
+        meta: AdocBlockMeta = .init(),
+        span: AdocRange? = nil
+    ) {
+        self.blocks = blocks
+        self.delimiter = delimiter
+        self.id = id
+        self.title = title
+        self.reftext = reftext
+        self.attribution = attribution
+        self.citetitle = citetitle
+        self.meta = meta
+        self.span = span
+    }
 }
 
 public struct AdocOpen: Sendable, Equatable {
@@ -342,6 +528,24 @@ public struct AdocOpen: Sendable, Equatable {
     public var reftext: AdocText?
     public var meta: AdocBlockMeta = .init()
     public var span: AdocRange?
+
+    public init(
+        blocks: [AdocBlock],
+        delimiter: String? = "--",
+        id: String? = nil,
+        title: AdocText? = nil,
+        reftext: AdocText? = nil,
+        meta: AdocBlockMeta = .init(),
+        span: AdocRange? = nil
+    ) {
+        self.blocks = blocks
+        self.delimiter = delimiter
+        self.id = id
+        self.title = title
+        self.reftext = reftext
+        self.meta = meta
+        self.span = span
+    }
 }
 
 public struct AdocAdmonition: Sendable, Equatable {
@@ -353,6 +557,26 @@ public struct AdocAdmonition: Sendable, Equatable {
     public var reftext: AdocText?
     public var meta: AdocBlockMeta = .init()
     public var span: AdocRange?
+
+    public init(
+        kind: String? = nil,
+        blocks: [AdocBlock],
+        delimiter: String? = "====",
+        id: String? = nil,
+        title: AdocText? = nil,
+        reftext: AdocText? = nil,
+        meta: AdocBlockMeta = .init(),
+        span: AdocRange? = nil
+    ) {
+        self.kind = kind
+        self.blocks = blocks
+        self.delimiter = delimiter
+        self.id = id
+        self.title = title
+        self.reftext = reftext
+        self.meta = meta
+        self.span = span
+    }
 }
 
 public struct AdocVerse: Sendable, Equatable {
@@ -366,6 +590,30 @@ public struct AdocVerse: Sendable, Equatable {
     public var citetitle: AdocText?      // Optional work title line
     public var meta: AdocBlockMeta = .init()
     public var span: AdocRange?
+
+    public init(
+        text: AdocText? = nil,
+        blocks: [AdocBlock] = [],
+        delimiter: String? = nil,
+        id: String? = nil,
+        title: AdocText? = nil,
+        reftext: AdocText? = nil,
+        attribution: AdocText? = nil,
+        citetitle: AdocText? = nil,
+        meta: AdocBlockMeta = .init(),
+        span: AdocRange? = nil
+    ) {
+        self.text = text
+        self.blocks = blocks
+        self.delimiter = delimiter
+        self.id = id
+        self.title = title
+        self.reftext = reftext
+        self.attribution = attribution
+        self.citetitle = citetitle
+        self.meta = meta
+        self.span = span
+    }
 }
 
 public struct AdocLiteralBlock: Sendable, Equatable {
@@ -376,6 +624,24 @@ public struct AdocLiteralBlock: Sendable, Equatable {
     public var reftext: AdocText?
     public var meta: AdocBlockMeta = .init()
     public var span: AdocRange?
+
+    public init(
+        text: AdocText,
+        delimiter: String? = nil,
+        id: String? = nil,
+        title: AdocText? = nil,
+        reftext: AdocText? = nil,
+        meta: AdocBlockMeta = .init(),
+        span: AdocRange? = nil
+    ) {
+        self.text = text
+        self.delimiter = delimiter
+        self.id = id
+        self.title = title
+        self.reftext = reftext
+        self.meta = meta
+        self.span = span
+    }
 }
 
 public struct AdocAuthor: Sendable, Equatable {
@@ -399,6 +665,17 @@ public struct AdocHeader: Sendable, Equatable {
     public var revisions: [AdocRevision]? // XAD: multiple revision lines
     public var location: AdocLocation? // ISM-native location
 
+    public init(
+        title: AdocText? = nil,
+        authors: [AdocAuthor]? = nil,
+        revisions: [AdocRevision]? = nil,
+        location: AdocLocation? = nil
+    ) {
+        self.title = title
+        self.authors = authors
+        self.revisions = revisions
+        self.location = location
+    }
 }
 
 public struct AdocWarning: Sendable, Equatable {
@@ -485,6 +762,26 @@ public struct AdocMathBlock: Sendable, Equatable {
     public var reftext: AdocText?
     public var meta: AdocBlockMeta = .init()
     public var span: AdocRange?
+
+    public init(
+        kind: AdocMathKind,
+        body: String,
+        display: Bool = true,
+        id: String? = nil,
+        title: AdocText? = nil,
+        reftext: AdocText? = nil,
+        meta: AdocBlockMeta = .init(),
+        span: AdocRange? = nil
+    ) {
+        self.kind = kind
+        self.body = body
+        self.display = display
+        self.id = id
+        self.title = title
+        self.reftext = reftext
+        self.meta = meta
+        self.span = span
+    }
 }
 
 public protocol AdocRenderable {
@@ -658,7 +955,7 @@ extension AdocTable: AdocRenderable {
         // TODO: Render ID/Title/Attributes if not handled by caller (currently ISM rendering is minimal)
         let delim = String(styleChar) + "===\n"
         out += delim
-        for (idx, row) in rows.enumerated() {
+        for (idx, row) in rawRows.enumerated() {
              out += row + "\n"
              if headerRowCount > 0, idx + 1 == headerRowCount {
                  out += "\n"
@@ -708,15 +1005,45 @@ public struct AdocTableCell: Sendable, Equatable {
     public var verticalAlignment: AdocTableVerticalAlignment?
     public var style: AdocTableCellStyle
     public var rawSpecifier: String?
+
+    public init(
+        text: String,
+        columnSpan: Int = 1,
+        rowSpan: Int = 1,
+        horizontalAlignment: AdocTableColumnAlignment? = nil,
+        verticalAlignment: AdocTableVerticalAlignment? = nil,
+        style: AdocTableCellStyle = .data,
+        rawSpecifier: String? = nil
+    ) {
+        self.text = text
+        self.columnSpan = columnSpan
+        self.rowSpan = rowSpan
+        self.horizontalAlignment = horizontalAlignment
+        self.verticalAlignment = verticalAlignment
+        self.style = style
+        self.rawSpecifier = rawSpecifier
+    }
+}
+
+public struct AdocTableRow: Sendable, Equatable {
+    public var cells: [AdocTableCell]
+    public var isHeader: Bool
+
+    public init(cells: [AdocTableCell], isHeader: Bool = false) {
+        self.cells = cells
+        self.isHeader = isHeader
+    }
 }
 
 public struct AdocTable: Sendable, Equatable {
     public var format: AdocTableFormat
     public var separator: Character       // actual delimiter character
     public var styleChar: Character       // char used in the fence (| , : ;)
-    public var rows: [String]             // raw table lines (blank separators removed)
+    public var rows: [AdocTableRow]
 
-    public var headerRowCount: Int = 0
+    public var headerRowCount: Int = 0 {
+        didSet { synchronizeHeaderRows() }
+    }
     public var columnAlignments: [AdocTableColumnAlignment]? = nil
 
     public var id: String?
@@ -724,6 +1051,69 @@ public struct AdocTable: Sendable, Equatable {
     public var reftext: AdocText?
     public var meta: AdocBlockMeta = .init()
     public var span: AdocRange?
+
+    public init(
+        format: AdocTableFormat = .psv,
+        separator: Character = "|",
+        styleChar: Character = "|",
+        rows: [AdocTableRow],
+        headerRowCount: Int = 0,
+        columnAlignments: [AdocTableColumnAlignment]? = nil,
+        id: String? = nil,
+        title: AdocText? = nil,
+        reftext: AdocText? = nil,
+        meta: AdocBlockMeta = .init(),
+        span: AdocRange? = nil
+    ) {
+        self.format = format
+        self.separator = separator
+        self.styleChar = styleChar
+        self.rows = rows
+        self.headerRowCount = headerRowCount
+        self.columnAlignments = columnAlignments
+        self.id = id
+        self.title = title
+        self.reftext = reftext
+        self.meta = meta
+        self.span = span
+        synchronizeHeaderRows()
+    }
+
+    /// Compatibility/import initializer for raw AsciiDoc table body lines.
+    /// The raw representation is immediately parsed into structured rows.
+    public init(
+        format: AdocTableFormat = .psv,
+        separator: Character = "|",
+        styleChar: Character = "|",
+        rows rawRows: [String],
+        headerRowCount: Int = 0,
+        columnAlignments: [AdocTableColumnAlignment]? = nil,
+        id: String? = nil,
+        title: AdocText? = nil,
+        reftext: AdocText? = nil,
+        meta: AdocBlockMeta = .init(),
+        span: AdocRange? = nil
+    ) {
+        self.format = format
+        self.separator = separator
+        self.styleChar = styleChar
+        self.rows = []
+        self.headerRowCount = headerRowCount
+        self.columnAlignments = columnAlignments
+        self.id = id
+        self.title = title
+        self.reftext = reftext
+        self.meta = meta
+        self.span = span
+        self.rows = parseRawRows(rawRows)
+        synchronizeHeaderRows()
+    }
+
+    private mutating func synchronizeHeaderRows() {
+        for index in rows.indices {
+            rows[index].isHeader = index < headerRowCount
+        }
+    }
 }
 
 
@@ -736,22 +1126,40 @@ public extension AdocTable {
     ///         empty cell is dropped so `| A | B` → ["A", "B"].
     ///  - CSV / TSV / DSV: naive split on separator (no quoting yet).
     var cells: [[String]] {
-        parsedRows.map { $0.map(\.text) }
+        rows.map { $0.cells.map(\.text) }
     }
 
-    /// Structured cell rows including span/style metadata.
+    /// Compatibility projection of structured cell rows.
     var parsedRows: [[AdocTableCell]] {
-        groupedRowStrings().map { rowString in
+        rows.map(\.cells)
+    }
+
+    /// Canonical AsciiDoc body lines generated from the structured rows.
+    var rawRows: [String] {
+        rows.map { row in
             switch format {
             case .psv:
-                return parsePSVRow(rowString, separator: separator)
+                return serializePSVRow(row.cells, separator: separator)
             case .csv, .tsv, .dsv:
-                return parseDelimitedRow(rowString, separator: separator)
+                return row.cells.map(\.text).joined(separator: String(separator))
             }
         }
     }
 
-    private func groupedRowStrings() -> [String] {
+    private func parseRawRows(_ rawRows: [String]) -> [AdocTableRow] {
+        groupedRowStrings(rawRows).enumerated().map { index, rowString in
+            let cells: [AdocTableCell]
+            switch format {
+            case .psv:
+                cells = parsePSVRow(rowString, separator: separator)
+            case .csv, .tsv, .dsv:
+                cells = parseDelimitedRow(rowString, separator: separator)
+            }
+            return AdocTableRow(cells: cells, isHeader: index < headerRowCount)
+        }
+    }
+
+    private func groupedRowStrings(_ rawRows: [String]) -> [String] {
         var grouped: [String] = []
         var buffer: [String] = []
         var rowCanSpanMultipleLines = false
@@ -763,7 +1171,7 @@ public extension AdocTable {
             rowCanSpanMultipleLines = false
         }
 
-        for line in rows {
+        for line in rawRows {
             if line.isEmpty {
                 flush()
                 rowCanSpanMultipleLines = true
@@ -777,6 +1185,23 @@ public extension AdocTable {
 
         flush()
         return grouped
+    }
+
+    private func serializePSVRow(_ cells: [AdocTableCell], separator: Character) -> String {
+        cells.reduce(into: String()) { output, cell in
+            if let specifier = cell.rawSpecifier, !specifier.isEmpty {
+                output += specifier
+            }
+            output.append(separator)
+            output.append(" ")
+            for character in cell.text {
+                if character == separator || character == "\\" {
+                    output.append("\\")
+                }
+                output.append(character)
+            }
+            output.append(" ")
+        }
     }
 
     /// PSV splitting with `\` escaping the separator and `\` itself.
