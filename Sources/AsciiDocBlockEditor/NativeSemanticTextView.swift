@@ -75,11 +75,12 @@ public final class AsciiDocNSTextEditorView: NSTextView, NSTextViewDelegate {
         replacementString: String?
     ) -> Bool {
         guard !isApplyingProjection,
-              let field = projection.field(containing: affectedCharRange),
-              let current = editorDocument.text(for: field.key) else {
+              let field = projection.field(containing: affectedCharRange) else {
             NSSound.beep()
             return false
         }
+
+        let current = (projection.attributedString.string as NSString).substring(with: field.range)
 
         let localRange = NSRange(
             location: affectedCharRange.location - field.range.location,
@@ -90,7 +91,11 @@ public final class AsciiDocNSTextEditorView: NSTextView, NSTextViewDelegate {
         let replacement = replacementString ?? ""
         let previousDocument = editorDocument
         let updated = (current as NSString).replacingCharacters(in: localRange, with: replacement)
-        editorDocument.updateText(updated, for: field.key)
+        if editorDocument.semanticText(for: field.key) != nil {
+            _ = editorDocument.replaceSemanticText(for: field.key, in: localRange, with: replacement)
+        } else {
+            editorDocument.updateText(updated, for: field.key)
+        }
         registerUndo(previousDocument)
         onDocumentChange?(editorDocument)
         rebuildProjection(selection: (field.key, localRange.location + (replacement as NSString).length))
@@ -172,17 +177,23 @@ public final class AsciiDocUITextEditorView: UITextView, UITextViewDelegate {
     ) -> Bool {
         guard !isApplyingProjection,
               markedTextRange == nil,
-              let field = projection.field(containing: range),
-              let current = editorDocument.text(for: field.key) else {
+              let field = projection.field(containing: range) else {
             return markedTextRange != nil
         }
+
+
+        let current = (projection.attributedString.string as NSString).substring(with: field.range)
 
         let localRange = NSRange(location: range.location - field.range.location, length: range.length)
         guard NSMaxRange(localRange) <= (current as NSString).length else { return false }
 
         let previousDocument = editorDocument
         let updated = (current as NSString).replacingCharacters(in: localRange, with: text)
-        editorDocument.updateText(updated, for: field.key)
+        if editorDocument.semanticText(for: field.key) != nil {
+            _ = editorDocument.replaceSemanticText(for: field.key, in: localRange, with: text)
+        } else {
+            editorDocument.updateText(updated, for: field.key)
+        }
         registerUndo(previousDocument)
         onDocumentChange?(editorDocument)
         rebuildProjection(selection: (field.key, localRange.location + (text as NSString).length))

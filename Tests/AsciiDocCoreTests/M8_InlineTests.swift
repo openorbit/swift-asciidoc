@@ -14,6 +14,22 @@ struct InlineTests {
     }
 
     @Test
+    func inline_mark() throws {
+        let parser = AdocParser()
+        let doc = parser.parse(text: "A #highlighted# phrase.")
+        guard case .paragraph(let paragraph) = doc.blocks.first else {
+            Issue.record("paragraph")
+            return
+        }
+        #expect(paragraph.text.inlines.contains {
+            if case .mark(let children, _) = $0 {
+                return children.plainText() == "highlighted"
+            }
+            return false
+        })
+    }
+
+    @Test
     func inline_code_and_escape() throws {
         let src = "Use `x \\\\` y` literal."
         let parser = AdocParser()

@@ -362,6 +362,7 @@ package func parseInlines(_ text: String, baseSpan: AdocRange?) -> [AdocInline] 
         case strong
         case emphasis
         case mono
+        case mark
         case superscript
         case `subscript`
     }
@@ -406,7 +407,7 @@ package func parseInlines(_ text: String, baseSpan: AdocRange?) -> [AdocInline] 
 
         // Constrained boundary rule for * and _ :
         // only treat as markup if surrounded by non-alphanumerics.
-        if kind == .strong || kind == .emphasis {
+        if kind == .strong || kind == .emphasis || kind == .mark {
             let open = start
 
             let charBefore: Character? = {
@@ -449,6 +450,8 @@ package func parseInlines(_ text: String, baseSpan: AdocRange?) -> [AdocInline] 
             return (.strong(innerInlines, span: outerSpan), next)
         case .emphasis:
             return (.emphasis(innerInlines, span: outerSpan), next)
+        case .mark:
+            return (.mark(innerInlines, span: outerSpan), next)
         case .superscript:
             return (.superscript(innerInlines, span: outerSpan), next)
         case .subscript:
@@ -544,6 +547,23 @@ package func parseInlines(_ text: String, baseSpan: AdocRange?) -> [AdocInline] 
                 continue
             }
 
+            buffer.append(c)
+            i = text.index(after: i)
+            continue
+        }
+
+        // Mark/highlight: #text#
+        if c == "#" {
+            if let (inline, nextIdx) = parseDelimited(
+                from: i,
+                delimiter: "#",
+                kind: .mark
+            ) {
+                flushBuffer()
+                result.append(inline)
+                i = nextIdx
+                continue
+            }
             buffer.append(c)
             i = text.index(after: i)
             continue

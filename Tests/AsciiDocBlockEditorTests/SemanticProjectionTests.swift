@@ -16,6 +16,10 @@ struct SemanticProjectionTests {
 
         #expect(projectedText.contains("Structured AsciiDoc Editing"))
         #expect(projectedText.contains("•\tWYSIWYM"))
+        #expect(projectedText.contains("strong, emphasis, code, and mark"))
+        #expect(!projectedText.contains("*strong*"))
+        #expect(!projectedText.contains("_emphasis_"))
+        #expect(!projectedText.contains("#mark#"))
         #expect(!projectedText.contains("== Inline formatting"))
         #expect(!projectedText.contains("|==="))
 
@@ -89,7 +93,48 @@ struct SemanticProjectionTests {
 
         #expect(paragraph.textBlocks.first is NSTextTableBlock)
     }
+
+    @Test
+    func macOSProjectionStylesInlineNodesWithoutShowingMarkers() throws {
+        let document = AsciiDocEditorDocument(ism: .init(blocks: [
+            .paragraph(.init(text: .init(plain: "plain *strong* and _emphasis_")))
+        ]))
+        let projection = AdocSemanticProjectionBuilder.make(document: document)
+        let text = projection.attributedString.string
+
+        #expect(text == "plain strong and emphasis")
+        let strongLocation = (text as NSString).range(of: "strong").location
+        let strongFont = try #require(projection.attributedString.attribute(.font, at: strongLocation, effectiveRange: nil) as? NSFont)
+        #expect(NSFontManager.shared.traits(of: strongFont).contains(.boldFontMask))
+
+        let emphasisLocation = (text as NSString).range(of: "emphasis").location
+        let emphasisFont = try #require(projection.attributedString.attribute(.font, at: emphasisLocation, effectiveRange: nil) as? NSFont)
+        #expect(NSFontManager.shared.traits(of: emphasisFont).contains(.italicFontMask))
+    }
     #endif
+
+    @Test
+    func typingInsideStrongTextPreservesTheInlineNode() throws {
+        var document = AsciiDocEditorDocument(ism: .init(blocks: [
+            .paragraph(.init(text: .init(plain: "before *strong* after")))
+        ]))
+        let key = AsciiDocEditorFieldKey(blockIndex: 0, path: "text")
+
+        let preserved = document.replaceSemanticText(
+            for: key,
+            in: NSRange(location: 8, length: 1),
+            with: "X"
+        )
+
+        #expect(preserved)
+        let text = try #require(document.semanticText(for: key))
+        #expect(text.visibleText == "before sXrong after")
+        #expect(text.plain == "before *sXrong* after")
+        #expect(text.inlines.contains { inline in
+            if case .strong = inline { return true }
+            return false
+        })
+    }
 }
 
 private extension AdocBlock {

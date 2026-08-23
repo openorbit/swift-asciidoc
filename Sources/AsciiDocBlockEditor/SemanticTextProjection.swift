@@ -32,8 +32,8 @@ enum AdocSemanticProjectionBuilder {
         var fields: [AdocProjectedField] = []
 
         if !document.title.isEmpty {
-            appendField(
-                document.title,
+            appendSemanticField(
+                document: document,
                 key: .init(blockIndex: -1, path: "title"),
                 style: .title,
                 to: result,
@@ -71,13 +71,8 @@ enum AdocSemanticProjectionBuilder {
         switch kind {
         case .heading:
             let level = document.headingLevel(at: blockIndex) ?? 1
-            appendField(
-                document.text(for: .init(blockIndex: blockIndex, path: "text")) ?? "",
-                key: .init(blockIndex: blockIndex, path: "text"),
-                style: .heading(level),
-                to: result,
-                fields: &fields
-            )
+            let key = AsciiDocEditorFieldKey(blockIndex: blockIndex, path: "text")
+            appendSemanticField(document: document, key: key, style: .heading(level), to: result, fields: &fields)
 
         case .paragraph:
             appendPrimaryText(document: document, blockIndex: blockIndex, style: .body, to: result, fields: &fields)
@@ -103,7 +98,7 @@ enum AdocSemanticProjectionBuilder {
                 let marker = kind == .orderedList ? "\(itemIndex + 1).\t" : "•\t"
                 appendGenerated(marker, style: .listMarker, to: result)
                 let key = AsciiDocEditorFieldKey(blockIndex: blockIndex, path: "item:\(itemIndex)")
-                appendField(document.text(for: key) ?? "", key: key, style: .body, to: result, fields: &fields)
+                appendSemanticField(document: document, key: key, style: .body, to: result, fields: &fields)
             }
 
         case .descriptionList:
@@ -111,9 +106,9 @@ enum AdocSemanticProjectionBuilder {
                 if itemIndex > 0 { appendSeparator(to: result, count: 1) }
                 let term = AsciiDocEditorFieldKey(blockIndex: blockIndex, path: "term:\(itemIndex):value")
                 let definition = AsciiDocEditorFieldKey(blockIndex: blockIndex, path: "definition:\(itemIndex):value")
-                appendField(document.text(for: term) ?? "", key: term, style: .term, to: result, fields: &fields)
+                appendSemanticField(document: document, key: term, style: .term, to: result, fields: &fields)
                 appendGenerated("\t", style: .body, to: result)
-                appendField(document.text(for: definition) ?? "", key: definition, style: .body, to: result, fields: &fields)
+                appendSemanticField(document: document, key: definition, style: .body, to: result, fields: &fields)
             }
 
         case .table:
@@ -132,7 +127,122 @@ enum AdocSemanticProjectionBuilder {
         fields: inout [AdocProjectedField]
     ) {
         let key = AsciiDocEditorFieldKey(blockIndex: blockIndex, path: "text")
-        appendField(document.text(for: key) ?? "", key: key, style: style, to: result, fields: &fields)
+        if document.semanticText(for: key) != nil {
+            appendSemanticField(document: document, key: key, style: style, to: result, fields: &fields)
+        } else {
+            appendField(document.text(for: key) ?? "", key: key, style: style, to: result, fields: &fields)
+        }
+    }
+
+    private static func appendSemanticField(
+        document: AsciiDocEditorDocument,
+        key: AsciiDocEditorFieldKey,
+        style: ProjectionStyle,
+        to result: NSMutableAttributedString,
+        fields: inout [AdocProjectedField]
+    ) {
+        guard let semanticText = document.semanticText(for: key) else {
+            appendField(document.text(for: key) ?? "", key: key, style: style, to: result, fields: &fields)
+            return
+        }
+
+        let location = result.length
+        let projected = NSMutableAttributedString(string: "")
+        appendInlineNodes(semanticText.inlines, baseStyle: style, to: projected)
+        result.append(projected)
+        fields.append(AdocProjectedField(key: key, range: NSRange(location: location, length: projected.length)))
+    }
+
+    private static func appendInlineNodes(
+        _ nodes: [AdocInline],
+        baseStyle: ProjectionStyle,
+        to result: NSMutableAttributedString
+    ) {
+        for node in nodes {
+            let start = result.length
+            switch node {
+            case .text(let value, _), .passthrough(let value, _):
+                result.append(NSAttributedString(string: value, attributes: baseStyle.attributes))
+            case .strong(let children, _), .emphasis(let children, _), .mono(let children, _),
+                 .mark(let children, _), .superscript(let children, _), .subscript(let children, _):
+                appendInlineNodes(children, baseStyle: baseStyle, to: result)
+            case .link(_, let children, _), .xref(_, let children, _):
+                appendInlineNodes(children, baseStyle: baseStyle, to: result)
+            case .math(_, let body, _, _):
+                result.append(NSAttributedString(string: body, attributes: ProjectionStyle.code.attributes))
+            case .inlineMacro(let name, let target, let body, _):
+                let visible = !body.isEmpty ? body : (target ?? name)
+                result.append(NSAttributedString(string: visible, attributes: baseStyle.attributes))
+            case .footnote(let children, _, _, _):
+                appendInlineNodes(children, baseStyle: baseStyle, to: result)
+            case .indexTerm(let terms, let visible, _):
+                if visible { result.append(NSAttributedString(string: terms.first ?? "", attributes: baseStyle.attributes)) }
+            }
+
+            let range = NSRange(location: start, length: result.length - start)
+            applyInlineDecoration(for: node, range: range, to: result)
+        }
+    }
+
+    private static func applyInlineDecoration(
+        for node: AdocInline,
+        range: NSRange,
+        to result: NSMutableAttributedString
+    ) {
+        guard range.length > 0 else { return }
+        switch node {
+        case .strong:
+            applyFontTrait(.bold, range: range, to: result)
+        case .emphasis:
+            applyFontTrait(.italic, range: range, to: result)
+        case .mono:
+            applyMonospacedFont(range: range, to: result)
+        case .mark:
+            #if canImport(AppKit)
+            result.addAttribute(.backgroundColor, value: NSColor.systemYellow.withAlphaComponent(0.35), range: range)
+            #elseif canImport(UIKit)
+            result.addAttribute(.backgroundColor, value: UIColor.systemYellow.withAlphaComponent(0.35), range: range)
+            #endif
+        case .link(let target, _, _):
+            result.addAttribute(.link, value: target, range: range)
+        case .xref(let target, _, _):
+            result.addAttribute(.link, value: target.raw, range: range)
+        case .superscript:
+            result.addAttribute(.baselineOffset, value: 4, range: range)
+        case .subscript:
+            result.addAttribute(.baselineOffset, value: -3, range: range)
+        default:
+            break
+        }
+    }
+
+    private enum FontTrait { case bold, italic }
+
+    private static func applyFontTrait(_ trait: FontTrait, range: NSRange, to result: NSMutableAttributedString) {
+        result.enumerateAttribute(.font, in: range) { value, subrange, _ in
+            #if canImport(AppKit)
+            guard let font = value as? NSFont else { return }
+            let mask: NSFontTraitMask = trait == .bold ? .boldFontMask : .italicFontMask
+            result.addAttribute(.font, value: NSFontManager.shared.convert(font, toHaveTrait: mask), range: subrange)
+            #elseif canImport(UIKit)
+            guard let font = value as? UIFont else { return }
+            let symbolic: UIFontDescriptor.SymbolicTraits = trait == .bold ? .traitBold : .traitItalic
+            guard let descriptor = font.fontDescriptor.withSymbolicTraits(font.fontDescriptor.symbolicTraits.union(symbolic)) else { return }
+            result.addAttribute(.font, value: UIFont(descriptor: descriptor, size: font.pointSize), range: subrange)
+            #endif
+        }
+    }
+
+    private static func applyMonospacedFont(range: NSRange, to result: NSMutableAttributedString) {
+        result.enumerateAttribute(.font, in: range) { value, subrange, _ in
+            #if canImport(AppKit)
+            let size = (value as? NSFont)?.pointSize ?? NSFont.systemFontSize
+            result.addAttribute(.font, value: NSFont.monospacedSystemFont(ofSize: size, weight: .regular), range: subrange)
+            #elseif canImport(UIKit)
+            let size = (value as? UIFont)?.pointSize ?? UIFont.preferredFont(forTextStyle: .body).pointSize
+            result.addAttribute(.font, value: UIFont.monospacedSystemFont(ofSize: size, weight: .regular), range: subrange)
+            #endif
+        }
     }
 
     private static func appendTable(
