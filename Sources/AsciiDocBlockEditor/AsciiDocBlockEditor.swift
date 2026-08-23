@@ -107,6 +107,26 @@ public struct AsciiDocEditorDocument: Equatable, Sendable {
         return preserved
     }
 
+    @discardableResult
+    public mutating func applySemanticInline(
+        _ markup: AsciiDocInlineMarkup,
+        to key: AsciiDocEditorFieldKey,
+        visibleRange: NSRange
+    ) -> Bool {
+        guard visibleRange.length > 0, var text = semanticText(for: key),
+              text.wrapVisibleText(in: visibleRange, with: markup) else { return false }
+
+        if key.blockIndex == -1, key.path == "title" {
+            if ism.header == nil { ism.header = AdocHeader() }
+            ism.header?.title = text
+            return true
+        }
+
+        guard ism.blocks.indices.contains(key.blockIndex) else { return false }
+        ism.blocks[key.blockIndex].setSemanticText(text, for: key.path)
+        return true
+    }
+
     public func headingLevel(at index: Int) -> Int? {
         guard blocks.indices.contains(index) else { return nil }
         switch blocks[index] {
@@ -194,11 +214,23 @@ public struct AsciiDocEditorFieldKey: Hashable, Sendable {
     }
 }
 
+public struct AsciiDocEditorSelection: Equatable, Sendable {
+    public var field: AsciiDocEditorFieldKey
+    public var range: NSRange
+
+    public init(field: AsciiDocEditorFieldKey, range: NSRange) {
+        self.field = field
+        self.range = range
+    }
+}
+
 public enum AsciiDocInlineMarkup: String, CaseIterable, Identifiable, Sendable {
     case emphasis
     case strong
     case code
     case mark
+    case subscriptText
+    case superscriptText
 
     public var id: String { rawValue }
 
@@ -208,6 +240,8 @@ public enum AsciiDocInlineMarkup: String, CaseIterable, Identifiable, Sendable {
         case .strong: return "Strong"
         case .code: return "Code"
         case .mark: return "Mark"
+        case .subscriptText: return "Subscript"
+        case .superscriptText: return "Superscript"
         }
     }
 
@@ -217,6 +251,8 @@ public enum AsciiDocInlineMarkup: String, CaseIterable, Identifiable, Sendable {
         case .strong: return "bold"
         case .code: return "curlybraces"
         case .mark: return "highlighter"
+        case .subscriptText: return "textformat.subscript"
+        case .superscriptText: return "textformat.superscript"
         }
     }
 
@@ -226,6 +262,19 @@ public enum AsciiDocInlineMarkup: String, CaseIterable, Identifiable, Sendable {
         case .strong: return "*"
         case .code: return "`"
         case .mark: return "#"
+        case .subscriptText: return "~"
+        case .superscriptText: return "^"
+        }
+    }
+
+    func wrapping(_ children: [AdocInline]) -> AdocInline {
+        switch self {
+        case .emphasis: return .emphasis(children, span: nil)
+        case .strong: return .strong(children, span: nil)
+        case .code: return .mono(children, span: nil)
+        case .mark: return .mark(children, span: nil)
+        case .subscriptText: return .subscript(children, span: nil)
+        case .superscriptText: return .superscript(children, span: nil)
         }
     }
 

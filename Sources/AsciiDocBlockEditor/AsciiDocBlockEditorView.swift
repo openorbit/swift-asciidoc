@@ -13,14 +13,96 @@ import SwiftUI
 /// AsciiDoc source.
 public struct AsciiDocEditorView: View {
     @Binding private var document: AsciiDocEditorDocument
+    @State private var selection: AsciiDocEditorSelection?
 
     public init(document: Binding<AsciiDocEditorDocument>) {
         _document = document
     }
 
     public var body: some View {
-        PlatformSemanticTextView(document: $document)
-            .background(.background)
+        VStack(spacing: 0) {
+            semanticToolbar
+            Divider()
+            PlatformSemanticTextView(document: $document, selection: $selection)
+        }
+        .background(.background)
+    }
+
+    private var semanticToolbar: some View {
+        HStack(spacing: 8) {
+            Menu(blockStyleTitle) {
+                if selectedBlockIndex == nil {
+                    Text(selection?.field.path == "title" ? "Document Title" : "Select text")
+                } else {
+                    Menu("Heading") {
+                        ForEach(1...5, id: \.self) { level in
+                            Button("Heading \(level)") { setBlockStyle(.heading, headingLevel: level) }
+                        }
+                    }
+                    .disabled(!canSetBlockStyle(.heading))
+                    ForEach(AsciiDocEditorBlockKind.allCases.filter { $0 != .heading }) { kind in
+                        Button(kind.title) { setBlockStyle(kind, headingLevel: nil) }
+                            .disabled(!canSetBlockStyle(kind))
+                    }
+                }
+            }
+            .help("Semantic paragraph or block style")
+
+            Divider().frame(height: 20)
+
+            ForEach(AsciiDocInlineMarkup.allCases) { markup in
+                Button {
+                    applyInline(markup)
+                } label: {
+                    Image(systemName: markup.symbol)
+                }
+                .buttonStyle(.borderless)
+                .help(markup.title)
+                .accessibilityLabel(markup.title)
+                .disabled(!canApplyInline)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(.bar)
+    }
+
+    private var selectedBlockIndex: Int? {
+        guard let index = selection?.field.blockIndex, document.blocks.indices.contains(index) else { return nil }
+        return index
+    }
+
+    private var blockStyleTitle: String {
+        guard let selection else { return "Style" }
+        if selection.field.blockIndex == -1 { return "Title" }
+        guard let index = selectedBlockIndex, let kind = document.blockKind(at: index) else { return "Style" }
+        if kind == .heading { return "Heading \(document.headingLevel(at: index) ?? 1)" }
+        return kind.title
+    }
+
+    private var canApplyInline: Bool {
+        guard let selection, selection.range.length > 0 else { return false }
+        return document.semanticText(for: selection.field) != nil
+    }
+
+    private func applyInline(_ markup: AsciiDocInlineMarkup) {
+        guard let selection else { return }
+        _ = document.applySemanticInline(markup, to: selection.field, visibleRange: selection.range)
+    }
+
+    private func canSetBlockStyle(_ kind: AsciiDocEditorBlockKind) -> Bool {
+        guard let index = selectedBlockIndex else { return false }
+        return document.blockKind(at: index) == kind || document.canTransformBlock(at: index, to: kind)
+    }
+
+    private func setBlockStyle(_ kind: AsciiDocEditorBlockKind, headingLevel: Int?) {
+        guard let index = selectedBlockIndex else { return }
+        if document.blockKind(at: index) != kind {
+            document.transformBlock(at: index, to: kind)
+        }
+        if kind == .heading, let headingLevel { document.setHeadingLevel(headingLevel, at: index) }
     }
 }
 
@@ -42,6 +124,7 @@ import AppKit
 
 private struct PlatformSemanticTextView: NSViewRepresentable {
     @Binding var document: AsciiDocEditorDocument
+    @Binding var selection: AsciiDocEditorSelection?
 
     func makeNSView(context: Context) -> NSScrollView {
         let textView = AsciiDocNSTextEditorView(textKit2Frame: .zero)
@@ -49,6 +132,7 @@ private struct PlatformSemanticTextView: NSViewRepresentable {
         textView.onDocumentChange = { updated in
             document = updated
         }
+        textView.onSelectionChange = { selection = $0 }
 
         let scrollView = NSScrollView()
         scrollView.borderType = .noBorder
@@ -65,6 +149,7 @@ private struct PlatformSemanticTextView: NSViewRepresentable {
         textView.onDocumentChange = { updated in
             document = updated
         }
+        textView.onSelectionChange = { selection = $0 }
         if textView.editorDocument != document {
             textView.editorDocument = document
         }
@@ -76,6 +161,7 @@ import UIKit
 
 private struct PlatformSemanticTextView: UIViewRepresentable {
     @Binding var document: AsciiDocEditorDocument
+    @Binding var selection: AsciiDocEditorSelection?
 
     func makeUIView(context: Context) -> AsciiDocUITextEditorView {
         let textView = AsciiDocUITextEditorView(textKit2Frame: .zero)
@@ -83,6 +169,7 @@ private struct PlatformSemanticTextView: UIViewRepresentable {
         textView.onDocumentChange = { updated in
             document = updated
         }
+        textView.onSelectionChange = { selection = $0 }
         return textView
     }
 
@@ -90,6 +177,7 @@ private struct PlatformSemanticTextView: UIViewRepresentable {
         textView.onDocumentChange = { updated in
             document = updated
         }
+        textView.onSelectionChange = { selection = $0 }
         if textView.editorDocument != document {
             textView.editorDocument = document
         }

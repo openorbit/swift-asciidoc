@@ -135,11 +135,50 @@ struct SemanticProjectionTests {
             return false
         })
     }
+
+    @Test(arguments: [
+        AsciiDocInlineMarkup.emphasis,
+        .strong,
+        .code,
+        .mark,
+        .subscriptText,
+        .superscriptText
+    ])
+    func semanticToolbarMarkupWrapsSelectedText(_ markup: AsciiDocInlineMarkup) throws {
+        var document = AsciiDocEditorDocument(ism: .init(blocks: [
+            .paragraph(.init(text: .init(plain: "before selected after")))
+        ]))
+        let key = AsciiDocEditorFieldKey(blockIndex: 0, path: "text")
+
+        let applied = document.applySemanticInline(
+            markup,
+            to: key,
+            visibleRange: NSRange(location: 7, length: 8)
+        )
+
+        #expect(applied)
+        let text = try #require(document.semanticText(for: key))
+        #expect(text.visibleText == "before selected after")
+        #expect(text.plain.contains("\(markup.delimiterForTesting)selected\(markup.delimiterForTesting)"))
+    }
 }
 
 private extension AdocBlock {
     var tableValue: AdocTable? {
         guard case .table(let table) = self else { return nil }
         return table
+    }
+}
+
+private extension AsciiDocInlineMarkup {
+    var delimiterForTesting: String {
+        switch self {
+        case .emphasis: "_"
+        case .strong: "*"
+        case .code: "`"
+        case .mark: "#"
+        case .subscriptText: "~"
+        case .superscriptText: "^"
+        }
     }
 }

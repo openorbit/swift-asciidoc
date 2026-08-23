@@ -14,6 +14,7 @@ public final class AsciiDocNSTextEditorView: NSTextView, NSTextViewDelegate {
     }
 
     public var onDocumentChange: ((AsciiDocEditorDocument) -> Void)?
+    public var onSelectionChange: ((AsciiDocEditorSelection?) -> Void)?
 
     private var projection = AdocSemanticProjectionBuilder.make(document: .init())
     private var isApplyingProjection = false
@@ -102,6 +103,19 @@ public final class AsciiDocNSTextEditorView: NSTextView, NSTextViewDelegate {
         return false
     }
 
+    public func textViewDidChangeSelection(_ notification: Notification) {
+        guard !isApplyingProjection else { return }
+        let nativeRange = selectedRange()
+        guard let field = projection.field(containing: nativeRange) else {
+            onSelectionChange?(nil)
+            return
+        }
+        onSelectionChange?(AsciiDocEditorSelection(
+            field: field.key,
+            range: NSRange(location: nativeRange.location - field.range.location, length: nativeRange.length)
+        ))
+    }
+
     private func registerUndo(_ previousDocument: AsciiDocEditorDocument) {
         undoManager?.registerUndo(withTarget: self) { target in
             let redoDocument = target.editorDocument
@@ -121,6 +135,7 @@ public final class AsciiDocUITextEditorView: UITextView, UITextViewDelegate {
     }
 
     public var onDocumentChange: ((AsciiDocEditorDocument) -> Void)?
+    public var onSelectionChange: ((AsciiDocEditorSelection?) -> Void)?
 
     private var projection = AdocSemanticProjectionBuilder.make(document: .init())
     private var isApplyingProjection = false
@@ -203,6 +218,19 @@ public final class AsciiDocUITextEditorView: UITextView, UITextViewDelegate {
     public func textViewDidChange(_ textView: UITextView) {
         // Marked text is left under UIKit's control. Reconciliation of composed
         // text into semantic fields is the next input-pipeline milestone.
+    }
+
+    public func textViewDidChangeSelection(_ textView: UITextView) {
+        guard !isApplyingProjection else { return }
+        let nativeRange = selectedRange
+        guard let field = projection.field(containing: nativeRange) else {
+            onSelectionChange?(nil)
+            return
+        }
+        onSelectionChange?(AsciiDocEditorSelection(
+            field: field.key,
+            range: NSRange(location: nativeRange.location - field.range.location, length: nativeRange.length)
+        ))
     }
 
     private func registerUndo(_ previousDocument: AsciiDocEditorDocument) {

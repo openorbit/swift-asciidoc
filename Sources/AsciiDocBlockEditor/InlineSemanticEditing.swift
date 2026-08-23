@@ -35,6 +35,18 @@ extension AdocText {
         return false
     }
 
+    mutating func wrapVisibleText(in range: NSRange, with markup: AsciiDocInlineMarkup) -> Bool {
+        guard range.length > 0, NSMaxRange(range) <= (visibleText as NSString).length else { return false }
+        var cursor = 0
+        guard let updated = Self.wrapping(in: inlines, range: range, markup: markup, cursor: &cursor) else {
+            return false
+        }
+        inlines = updated
+        plain = updated.map(\.asciiDocSource).joined()
+        span = nil
+        return true
+    }
+
     fileprivate static func replacing(
         in nodes: [AdocInline],
         range: NSRange,
@@ -53,6 +65,30 @@ extension AdocText {
                 with: replacement
             ) {
                 result[index] = replaced
+                return result
+            }
+            cursor = nodeEnd
+        }
+        return nil
+    }
+
+    fileprivate static func wrapping(
+        in nodes: [AdocInline],
+        range: NSRange,
+        markup: AsciiDocInlineMarkup,
+        cursor: inout Int
+    ) -> [AdocInline]? {
+        var result = nodes
+        for index in result.indices {
+            let nodeStart = cursor
+            let nodeLength = (result[index].visibleText as NSString).length
+            let nodeEnd = nodeStart + nodeLength
+            if range.location >= nodeStart, NSMaxRange(range) <= nodeEnd,
+               let replacement = result[index].wrappingVisibleText(
+                   in: NSRange(location: range.location - nodeStart, length: range.length),
+                   with: markup
+               ) {
+                result.replaceSubrange(index...index, with: replacement)
                 return result
             }
             cursor = nodeEnd
@@ -138,6 +174,49 @@ extension AdocInline {
         }
     }
 
+    fileprivate func wrappingVisibleText(
+        in range: NSRange,
+        with markup: AsciiDocInlineMarkup
+    ) -> [AdocInline]? {
+        switch self {
+        case .text(let value, _):
+            let nsValue = value as NSString
+            guard range.length > 0, NSMaxRange(range) <= nsValue.length else { return nil }
+            var result: [AdocInline] = []
+            if range.location > 0 {
+                result.append(.text(nsValue.substring(to: range.location), span: nil))
+            }
+            result.append(markup.wrapping([.text(nsValue.substring(with: range), span: nil)]))
+            if NSMaxRange(range) < nsValue.length {
+                result.append(.text(nsValue.substring(from: NSMaxRange(range)), span: nil))
+            }
+            return result
+
+        case .strong(let children, _):
+            return wrappingChildren(children, range: range, markup: markup) { [.strong($0, span: nil)] }
+        case .emphasis(let children, _):
+            return wrappingChildren(children, range: range, markup: markup) { [.emphasis($0, span: nil)] }
+        case .mono(let children, _):
+            return wrappingChildren(children, range: range, markup: markup) { [.mono($0, span: nil)] }
+        case .mark(let children, _):
+            return wrappingChildren(children, range: range, markup: markup) { [.mark($0, span: nil)] }
+        case .superscript(let children, _):
+            return wrappingChildren(children, range: range, markup: markup) { [.superscript($0, span: nil)] }
+        case .subscript(let children, _):
+            return wrappingChildren(children, range: range, markup: markup) { [.subscript($0, span: nil)] }
+        case .link(let target, let children, _):
+            return wrappingChildren(children, range: range, markup: markup) {
+                [.link(target: target, text: $0, span: nil)]
+            }
+        case .xref(let target, let children, _):
+            return wrappingChildren(children, range: range, markup: markup) {
+                [.xref(target: target, text: $0, span: nil)]
+            }
+        default:
+            return nil
+        }
+    }
+
     private func replacingChildren(
         _ children: [AdocInline],
         range: NSRange,
@@ -146,6 +225,19 @@ extension AdocInline {
     ) -> AdocInline? {
         var cursor = 0
         guard let updated = AdocText.replacing(in: children, range: range, replacement: replacement, cursor: &cursor) else {
+            return nil
+        }
+        return wrap(updated)
+    }
+
+    private func wrappingChildren(
+        _ children: [AdocInline],
+        range: NSRange,
+        markup: AsciiDocInlineMarkup,
+        wrap: ([AdocInline]) -> [AdocInline]
+    ) -> [AdocInline]? {
+        var cursor = 0
+        guard let updated = AdocText.wrapping(in: children, range: range, markup: markup, cursor: &cursor) else {
             return nil
         }
         return wrap(updated)
