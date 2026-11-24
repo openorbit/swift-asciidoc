@@ -161,6 +161,127 @@ struct SemanticProjectionTests {
         #expect(text.visibleText == "before selected after")
         #expect(text.plain.contains("\(markup.delimiterForTesting)selected\(markup.delimiterForTesting)"))
     }
+
+    @Test
+    func insertingNewlineInParagraphSplitsIntoTwoParagraphBlocks() throws {
+        var document = AsciiDocEditorDocument(ism: .init(blocks: [
+            .paragraph(.init(text: .init(plain: "First paragraphSecond paragraph")))
+        ]))
+        let key = AsciiDocEditorFieldKey(blockIndex: 0, path: "text")
+
+        let next = document.applyEdit(in: key, range: NSRange(location: 15, length: 0), replacement: "\n")
+
+        #expect(document.blocks.count == 2)
+        #expect(document.text(for: .init(blockIndex: 0, path: "text")) == "First paragraph")
+        #expect(document.text(for: .init(blockIndex: 1, path: "text")) == "Second paragraph")
+        #expect(next == AsciiDocEditorSelection(
+            field: .init(blockIndex: 1, path: "text"),
+            range: NSRange(location: 0, length: 0)
+        ))
+    }
+
+    @Test
+    func setBlockStyleOnMultiLineParagraphOnlyChangesCursorLine() throws {
+        var document = AsciiDocEditorDocument(ism: .init(blocks: [
+            .paragraph(.init(text: .init(plain: "Intro\nSection Title\nBody")))
+        ]))
+        let selection = AsciiDocEditorSelection(
+            field: .init(blockIndex: 0, path: "text"),
+            range: NSRange(location: 8, length: 0)
+        )
+
+        let updatedSelection = document.setBlockStyle(.heading, headingLevel: 2, at: selection)
+
+        #expect(document.blocks.count == 3)
+        #expect(document.blockKind(at: 0) == .paragraph)
+        #expect(document.text(for: .init(blockIndex: 0, path: "text")) == "Intro")
+        #expect(document.blockKind(at: 1) == .heading)
+        #expect(document.headingLevel(at: 1) == 2)
+        #expect(document.text(for: .init(blockIndex: 1, path: "text")) == "Section Title")
+        #expect(document.blockKind(at: 2) == .paragraph)
+        #expect(document.text(for: .init(blockIndex: 2, path: "text")) == "Body")
+        #expect(updatedSelection.field == .init(blockIndex: 1, path: "text"))
+    }
+
+    @Test
+    func listStyleTransformationPreservesAllItems() throws {
+        var document = AsciiDocEditorDocument(ism: .init(blocks: [
+            .list(.init(
+                kind: .unordered(marker: "*"),
+                items: [
+                    .init(marker: "*", principal: .init(plain: "One")),
+                    .init(marker: "*", principal: .init(plain: "Two"))
+                ]
+            ))
+        ]))
+
+        let selection = AsciiDocEditorSelection(
+            field: .init(blockIndex: 0, path: "item:1"),
+            range: NSRange(location: 0, length: 0)
+        )
+        let updated = document.setBlockStyle(.orderedList, at: selection)
+
+        #expect(document.blockKind(at: 0) == .orderedList)
+        #expect(document.itemCount(at: 0) == 2)
+        #expect(document.text(for: .init(blockIndex: 0, path: "item:0")) == "One")
+        #expect(document.text(for: .init(blockIndex: 0, path: "item:1")) == "Two")
+        #expect(updated.field == .init(blockIndex: 0, path: "item:1"))
+    }
+
+    @Test
+    func newlineInEmptyListItemExitsListIntoParagraph() throws {
+        var document = AsciiDocEditorDocument(ism: .init(blocks: [
+            .list(.init(
+                kind: .unordered(marker: "*"),
+                items: [
+                    .init(marker: "*", principal: .init(plain: "One")),
+                    .init(marker: "*", principal: .init(plain: ""))
+                ]
+            ))
+        ]))
+
+        let next = document.applyEdit(
+            in: .init(blockIndex: 0, path: "item:1"),
+            range: NSRange(location: 0, length: 0),
+            replacement: "\n"
+        )
+
+        #expect(document.blocks.count == 2)
+        #expect(document.itemCount(at: 0) == 1)
+        #expect(document.blockKind(at: 1) == .paragraph)
+        #expect(next == AsciiDocEditorSelection(
+            field: .init(blockIndex: 1, path: "text"),
+            range: NSRange(location: 0, length: 0)
+        ))
+    }
+
+    @Test
+    func backspaceAtStartOfParagraphMergesWithPreviousParagraph() throws {
+        var document = AsciiDocEditorDocument(ism: .init(blocks: [
+            .paragraph(.init(text: .init(plain: "Hello "))),
+            .paragraph(.init(text: .init(plain: "world")))
+        ]))
+
+        let next = document.deleteBackwardAtStart(of: .init(blockIndex: 1, path: "text"))
+
+        #expect(document.blocks.count == 1)
+        #expect(document.text(for: .init(blockIndex: 0, path: "text")) == "Hello world")
+        #expect(next == AsciiDocEditorSelection(
+            field: .init(blockIndex: 0, path: "text"),
+            range: NSRange(location: 6, length: 0)
+        ))
+    }
+
+    @Test
+    func parsingAsciiDocFlattensSectionBlocksIntoEditableProjection() throws {
+        let document = AsciiDocEditorDocument(asciiDoc: "= Title\n\n== Section\n\nBody paragraph.")
+        let projection = AdocSemanticProjectionBuilder.make(document: document)
+
+        #expect(document.blocks.count == 2)
+        #expect(document.blockKind(at: 0) == .heading)
+        #expect(document.blockKind(at: 1) == .paragraph)
+        #expect(projection.attributedString.string.contains("Body paragraph."))
+    }
 }
 
 private extension AdocBlock {

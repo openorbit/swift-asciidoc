@@ -10,11 +10,15 @@ public struct AsciiDocEditorDocument: Equatable, Sendable {
     public var ism: AdocDocument
 
     public init(ism: AdocDocument = .init()) {
-        self.ism = ism
+        var normalized = ism
+        normalized.blocks = Self.flattenSections(in: normalized.blocks)
+        self.ism = normalized
     }
 
     public init(asciiDoc: String) {
-        self.ism = AdocParser().parse(text: asciiDoc)
+        var parsed = AdocParser().parse(text: asciiDoc)
+        parsed.blocks = Self.flattenSections(in: parsed.blocks)
+        self.ism = parsed
     }
 
     public var title: String {
@@ -189,6 +193,434 @@ public struct AsciiDocEditorDocument: Equatable, Sendable {
     public mutating func transformBlock(at index: Int, to kind: AsciiDocEditorBlockKind) {
         guard ism.blocks.indices.contains(index) else { return }
         ism.blocks[index].transform(to: kind)
+    }
+
+    @discardableResult
+    public mutating func setBlockStyle(
+        _ kind: AsciiDocEditorBlockKind,
+        headingLevel: Int? = nil,
+        at selection: AsciiDocEditorSelection
+    ) -> AsciiDocEditorSelection {
+        var targetIndex = selection.field.blockIndex
+        var targetRange = selection.range
+        guard ism.blocks.indices.contains(targetIndex) else { return selection }
+
+        // If a paragraph contains soft line breaks, isolate only the line at the cursor
+        // so changing style affects only that paragraph/line rather than the whole block.
+        if selection.field.path == "text",
+           blockKind(at: targetIndex) == .paragraph,
+           let currentText = semanticText(for: selection.field),
+           currentText.visibleText.contains("\n") {
+            let splitResult = Self.isolateLine(in: currentText, at: targetRange.location)
+            var replacementBlocks: [AdocBlock] = []
+            var offsetInBlocks = 0
+            if let before = splitResult.before {
+                replacementBlocks.append(.paragraph(AdocParagraph(text: before)))
+                offsetInBlocks = 1
+            }
+            replacementBlocks.append(.paragraph(AdocParagraph(text: splitResult.line)))
+            if let after = splitResult.after {
+                replacementBlocks.append(.paragraph(AdocParagraph(text: after)))
+            }
+            ism.blocks.replaceSubrange(targetIndex...targetIndex, with: replacementBlocks)
+            targetIndex += offsetInBlocks
+            let lineLen = (splitResult.line.visibleText as NSString).length
+            let newLoc = min(max(0, targetRange.location - splitResult.lineStartOffset), lineLen)
+            targetRange = NSRange(location: newLoc, length: min(targetRange.length, lineLen - newLoc))
+        }
+
+        if blockKind(at: targetIndex) != kind {
+            transformBlock(at: targetIndex, to: kind)
+        }
+        if kind == .heading, let headingLevel {
+            setHeadingLevel(headingLevel, at: targetIndex)
+        }
+
+        let updatedPath: String
+        switch kind {
+        case .orderedList, .unorderedList:
+            updatedPath = selection.field.path.hasPrefix("item:") ? selection.field.path : "item:0"
+        case .descriptionList:
+            updatedPath = "term:0:value"
+        case .table:
+            updatedPath = "cell:0:0"
+        default:
+            updatedPath = "text"
+        }
+
+        return AsciiDocEditorSelection(
+            field: AsciiDocEditorFieldKey(blockIndex: targetIndex, path: updatedPath),
+            range: targetRange
+        )
+    }
+
+    @discardableResult
+    public mutating func applyEdit(
+        in key: AsciiDocEditorFieldKey,
+        range localRange: NSRange,
+        replacement: String
+    ) -> AsciiDocEditorSelection? {
+        let normalized = replacement
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+
+        if !normalized.contains("\n") {
+            guard let current = text(for: key) else { return nil }
+            let updated = (current as NSString).replacingCharacters(in: localRange, with: normalized)
+            if semanticText(for: key) != nil {
+                _ = replaceSemanticText(for: key, in: localRange, with: normalized)
+            } else {
+                updateText(updated, for: key)
+            }
+            let cursor = localRange.location + (normalized as NSString).length
+            return AsciiDocEditorSelection(field: key, range: NSRange(location: cursor, length: 0))
+        }
+
+        if key.blockIndex == -1, key.path == "title" {
+            let currentTitle = semanticText(for: key) ?? AdocText(plain: title)
+            let (before, after) = currentTitle.splittingVisibleText(at: localRange)
+            let parts = normalized.components(separatedBy: "\n")
+            let firstPart = parts[0]
+            let updatedTitle = firstPart.isEmpty ? before : before.appending(AdocText(plain: firstPart))
+            title = updatedTitle.plain
+            if ism.header == nil { ism.header = AdocHeader() }
+            ism.header?.title = updatedTitle.visibleText.isEmpty ? nil : updatedTitle
+
+            var newBlocks: [AdocBlock] = []
+            for idx in 1..<parts.count {
+                let partText = AdocText(plain: parts[idx])
+                let blockText = (idx == parts.count - 1) ? partText.appending(after) : partText
+                newBlocks.append(.paragraph(AdocParagraph(text: blockText)))
+            }
+            ism.blocks.insert(contentsOf: newBlocks, at: 0)
+            let lastBlockIndex = max(0, newBlocks.count - 1)
+            let cursorOffset = (parts.last! as NSString).length
+            return AsciiDocEditorSelection(
+                field: AsciiDocEditorFieldKey(blockIndex: lastBlockIndex, path: "text"),
+                range: NSRange(location: cursorOffset, length: 0)
+            )
+        }
+
+        guard ism.blocks.indices.contains(key.blockIndex),
+              let kind = blockKind(at: key.blockIndex) else { return nil }
+
+        switch kind {
+        case .listing, .verse, .equation, .table:
+            guard let current = text(for: key) else { return nil }
+            let updated = (current as NSString).replacingCharacters(in: localRange, with: normalized)
+            if semanticText(for: key) != nil {
+                _ = replaceSemanticText(for: key, in: localRange, with: normalized)
+            } else {
+                updateText(updated, for: key)
+            }
+            let cursor = localRange.location + (normalized as NSString).length
+            return AsciiDocEditorSelection(field: key, range: NSRange(location: cursor, length: 0))
+
+        case .unorderedList, .orderedList:
+            return applyNewlineEditInList(
+                blockIndex: key.blockIndex,
+                path: key.path,
+                localRange: localRange,
+                normalized: normalized
+            )
+
+        case .descriptionList:
+            return applyNewlineEditInDList(
+                blockIndex: key.blockIndex,
+                path: key.path,
+                localRange: localRange,
+                normalized: normalized
+            )
+
+        case .paragraph, .heading, .admonition:
+            let currentText = semanticText(for: key) ?? AdocText(plain: text(for: key) ?? "")
+            let (before, after) = currentText.splittingVisibleText(at: localRange)
+            let parts = normalized.components(separatedBy: "\n")
+            let firstText = parts[0].isEmpty ? before : before.appending(AdocText(plain: parts[0]))
+
+            if semanticText(for: key) != nil {
+                ism.blocks[key.blockIndex].setSemanticText(firstText, for: key.path)
+            } else {
+                ism.blocks[key.blockIndex].updateText(firstText.plain, for: key.path)
+            }
+
+            var newBlocks: [AdocBlock] = []
+            for idx in 1..<parts.count {
+                let partText = AdocText(plain: parts[idx])
+                let blockText = (idx == parts.count - 1) ? partText.appending(after) : partText
+                newBlocks.append(.paragraph(AdocParagraph(text: blockText)))
+            }
+            ism.blocks.insert(contentsOf: newBlocks, at: key.blockIndex + 1)
+            let targetIndex = key.blockIndex + newBlocks.count
+            let cursorOffset = (parts.last! as NSString).length
+            return AsciiDocEditorSelection(
+                field: AsciiDocEditorFieldKey(blockIndex: targetIndex, path: "text"),
+                range: NSRange(location: cursorOffset, length: 0)
+            )
+        }
+    }
+
+    @discardableResult
+    public mutating func deleteBackwardAtStart(of key: AsciiDocEditorFieldKey) -> AsciiDocEditorSelection? {
+        guard key.blockIndex >= 0, ism.blocks.indices.contains(key.blockIndex) else { return nil }
+
+        if case .list(var list) = ism.blocks[key.blockIndex],
+           key.path.hasPrefix("item:"),
+           let itemIndex = Int(key.path.split(separator: ":").last ?? ""),
+           list.items.indices.contains(itemIndex) {
+            if itemIndex == 0 {
+                let firstItem = list.items.removeFirst()
+                let paragraph = AdocBlock.paragraph(AdocParagraph(text: firstItem.principal))
+                if list.items.isEmpty {
+                    ism.blocks[key.blockIndex] = paragraph
+                } else {
+                    ism.blocks[key.blockIndex] = .list(list)
+                    ism.blocks.insert(paragraph, at: key.blockIndex)
+                }
+                return AsciiDocEditorSelection(
+                    field: AsciiDocEditorFieldKey(blockIndex: key.blockIndex, path: "text"),
+                    range: NSRange(location: 0, length: 0)
+                )
+            } else {
+                let removed = list.items.remove(at: itemIndex)
+                let prevIndex = itemIndex - 1
+                let joinOffset = (list.items[prevIndex].principal.visibleText as NSString).length
+                list.items[prevIndex].principal = list.items[prevIndex].principal.appending(removed.principal)
+                ism.blocks[key.blockIndex] = .list(list)
+                return AsciiDocEditorSelection(
+                    field: AsciiDocEditorFieldKey(blockIndex: key.blockIndex, path: "item:\(prevIndex)"),
+                    range: NSRange(location: joinOffset, length: 0)
+                )
+            }
+        }
+
+        if blockKind(at: key.blockIndex) == .heading,
+           (semanticText(for: key)?.visibleText ?? text(for: key) ?? "").isEmpty {
+            ism.blocks[key.blockIndex] = .paragraph(AdocParagraph(text: AdocText(plain: "")))
+            return AsciiDocEditorSelection(
+                field: AsciiDocEditorFieldKey(blockIndex: key.blockIndex, path: "text"),
+                range: NSRange(location: 0, length: 0)
+            )
+        }
+
+        guard key.blockIndex > 0, key.path == "text" else { return nil }
+        let prevIndex = key.blockIndex - 1
+        let currentAdocText = semanticText(for: key) ?? AdocText(plain: text(for: key) ?? "")
+
+        if let prevKind = blockKind(at: prevIndex),
+           prevKind == .paragraph || prevKind == .heading || prevKind == .listing || prevKind == .verse {
+            let prevKey = AsciiDocEditorFieldKey(blockIndex: prevIndex, path: "text")
+            let prevAdocText = semanticText(for: prevKey) ?? AdocText(plain: text(for: prevKey) ?? "")
+            let joinOffset = (prevAdocText.visibleText as NSString).length
+            let merged = prevAdocText.appending(currentAdocText)
+            if ism.blocks[prevIndex].semanticText(for: "text") != nil {
+                ism.blocks[prevIndex].setSemanticText(merged, for: "text")
+            } else {
+                ism.blocks[prevIndex].updateText(merged.plain, for: "text")
+            }
+            ism.blocks.remove(at: key.blockIndex)
+            return AsciiDocEditorSelection(field: prevKey, range: NSRange(location: joinOffset, length: 0))
+        }
+
+        if case .list(var prevList) = ism.blocks[prevIndex], !prevList.items.isEmpty {
+            let lastIdx = prevList.items.count - 1
+            let joinOffset = (prevList.items[lastIdx].principal.visibleText as NSString).length
+            prevList.items[lastIdx].principal = prevList.items[lastIdx].principal.appending(currentAdocText)
+            ism.blocks[prevIndex] = .list(prevList)
+            ism.blocks.remove(at: key.blockIndex)
+            return AsciiDocEditorSelection(
+                field: AsciiDocEditorFieldKey(blockIndex: prevIndex, path: "item:\(lastIdx)"),
+                range: NSRange(location: joinOffset, length: 0)
+            )
+        }
+
+        if currentAdocText.visibleText.isEmpty {
+            ism.blocks.remove(at: key.blockIndex)
+            return AsciiDocEditorSelection(
+                field: AsciiDocEditorFieldKey(blockIndex: prevIndex, path: "text"),
+                range: NSRange(location: 0, length: 0)
+            )
+        }
+
+        return nil
+    }
+
+    private mutating func applyNewlineEditInList(
+        blockIndex: Int,
+        path: String,
+        localRange: NSRange,
+        normalized: String
+    ) -> AsciiDocEditorSelection? {
+        guard case .list(var list) = ism.blocks[blockIndex],
+              path.hasPrefix("item:"),
+              let itemIndex = Int(path.split(separator: ":").last ?? ""),
+              list.items.indices.contains(itemIndex) else { return nil }
+
+        let currentItem = list.items[itemIndex]
+        if normalized == "\n",
+           localRange.location == 0,
+           localRange.length == 0,
+           currentItem.principal.visibleText.isEmpty {
+            let emptyParagraph = AdocBlock.paragraph(AdocParagraph(text: AdocText(plain: "")))
+            if list.items.count == 1 {
+                ism.blocks[blockIndex] = emptyParagraph
+                return AsciiDocEditorSelection(
+                    field: AsciiDocEditorFieldKey(blockIndex: blockIndex, path: "text"),
+                    range: NSRange(location: 0, length: 0)
+                )
+            } else if itemIndex == 0 {
+                list.items.removeFirst()
+                ism.blocks[blockIndex] = .list(list)
+                ism.blocks.insert(emptyParagraph, at: blockIndex)
+                return AsciiDocEditorSelection(
+                    field: AsciiDocEditorFieldKey(blockIndex: blockIndex, path: "text"),
+                    range: NSRange(location: 0, length: 0)
+                )
+            } else if itemIndex == list.items.count - 1 {
+                list.items.removeLast()
+                ism.blocks[blockIndex] = .list(list)
+                ism.blocks.insert(emptyParagraph, at: blockIndex + 1)
+                return AsciiDocEditorSelection(
+                    field: AsciiDocEditorFieldKey(blockIndex: blockIndex + 1, path: "text"),
+                    range: NSRange(location: 0, length: 0)
+                )
+            } else {
+                let trailingItems = Array(list.items[(itemIndex + 1)...])
+                list.items = Array(list.items[..<itemIndex])
+                ism.blocks[blockIndex] = .list(list)
+                ism.blocks.insert(emptyParagraph, at: blockIndex + 1)
+                ism.blocks.insert(.list(AdocList(kind: list.kind, items: trailingItems)), at: blockIndex + 2)
+                return AsciiDocEditorSelection(
+                    field: AsciiDocEditorFieldKey(blockIndex: blockIndex + 1, path: "text"),
+                    range: NSRange(location: 0, length: 0)
+                )
+            }
+        }
+
+        let (before, after) = currentItem.principal.splittingVisibleText(at: localRange)
+        let parts = normalized.components(separatedBy: "\n")
+        list.items[itemIndex].principal = parts[0].isEmpty ? before : before.appending(AdocText(plain: parts[0]))
+
+        var newItems: [AdocListItem] = []
+        for idx in 1..<parts.count {
+            let partText = AdocText(plain: parts[idx])
+            let itemText = (idx == parts.count - 1) ? partText.appending(after) : partText
+            newItems.append(AdocListItem(marker: currentItem.marker, principal: itemText))
+        }
+        list.items.insert(contentsOf: newItems, at: itemIndex + 1)
+        ism.blocks[blockIndex] = .list(list)
+        let targetItem = itemIndex + newItems.count
+        let cursorOffset = (parts.last! as NSString).length
+        return AsciiDocEditorSelection(
+            field: AsciiDocEditorFieldKey(blockIndex: blockIndex, path: "item:\(targetItem)"),
+            range: NSRange(location: cursorOffset, length: 0)
+        )
+    }
+
+    private mutating func applyNewlineEditInDList(
+        blockIndex: Int,
+        path: String,
+        localRange: NSRange,
+        normalized: String
+    ) -> AsciiDocEditorSelection? {
+        guard case .dlist(var list) = ism.blocks[blockIndex] else { return nil }
+        let parts = path.split(separator: ":")
+        guard parts.count == 3, let itemIndex = Int(parts[1]), list.items.indices.contains(itemIndex) else { return nil }
+
+        if parts[0] == "term" {
+            return AsciiDocEditorSelection(
+                field: AsciiDocEditorFieldKey(blockIndex: blockIndex, path: "definition:\(itemIndex):value"),
+                range: NSRange(location: 0, length: 0)
+            )
+        } else if parts[0] == "definition" {
+            if normalized == "\n",
+               localRange.location == 0,
+               localRange.length == 0,
+               (list.items[itemIndex].principal?.visibleText ?? "").isEmpty {
+                let emptyParagraph = AdocBlock.paragraph(AdocParagraph(text: AdocText(plain: "")))
+                if list.items.count == 1 {
+                    ism.blocks[blockIndex] = emptyParagraph
+                    return AsciiDocEditorSelection(
+                        field: AsciiDocEditorFieldKey(blockIndex: blockIndex, path: "text"),
+                        range: NSRange(location: 0, length: 0)
+                    )
+                }
+                list.items.remove(at: itemIndex)
+                ism.blocks[blockIndex] = .dlist(list)
+                ism.blocks.insert(emptyParagraph, at: blockIndex + 1)
+                return AsciiDocEditorSelection(
+                    field: AsciiDocEditorFieldKey(blockIndex: blockIndex + 1, path: "text"),
+                    range: NSRange(location: 0, length: 0)
+                )
+            }
+            list.items.insert(
+                AdocDListItem(term: AdocText(plain: "Term"), principal: AdocText(plain: "")),
+                at: itemIndex + 1
+            )
+            ism.blocks[blockIndex] = .dlist(list)
+            return AsciiDocEditorSelection(
+                field: AsciiDocEditorFieldKey(blockIndex: blockIndex, path: "term:\(itemIndex + 1):value"),
+                range: NSRange(location: 0, length: 0)
+            )
+        }
+        return nil
+    }
+
+    private static func isolateLine(
+        in text: AdocText,
+        at offset: Int
+    ) -> (before: AdocText?, line: AdocText, after: AdocText?, lineStartOffset: Int) {
+        let visible = text.visibleText as NSString
+        let safeOffset = min(max(0, offset), visible.length)
+
+        var lineStart = 0
+        if safeOffset > 0 {
+            let searchRange = NSRange(location: 0, length: safeOffset)
+            let prevNewline = visible.range(of: "\n", options: .backwards, range: searchRange)
+            if prevNewline.location != NSNotFound {
+                lineStart = NSMaxRange(prevNewline)
+            }
+        }
+
+        var lineEnd = visible.length
+        if safeOffset < visible.length {
+            let searchRange = NSRange(location: safeOffset, length: visible.length - safeOffset)
+            let nextNewline = visible.range(of: "\n", options: [], range: searchRange)
+            if nextNewline.location != NSNotFound {
+                lineEnd = nextNewline.location
+            }
+        }
+
+        let before: AdocText? = lineStart > 0
+            ? text.splittingVisibleText(at: NSRange(location: lineStart - 1, length: 1)).before
+            : nil
+        let after: AdocText? = lineEnd < visible.length
+            ? text.splittingVisibleText(at: NSRange(location: lineEnd, length: 1)).after
+            : nil
+
+        let withoutAfter = lineEnd < visible.length
+            ? text.splittingVisibleText(at: NSRange(location: lineEnd, length: visible.length - lineEnd)).before
+            : text
+        let line = lineStart > 0
+            ? withoutAfter.splittingVisibleText(at: NSRange(location: 0, length: lineStart)).after
+            : withoutAfter
+
+        return (before, line, after, lineStart)
+    }
+
+    private static func flattenSections(in blocks: [AdocBlock]) -> [AdocBlock] {
+        var result: [AdocBlock] = []
+        for block in blocks {
+            if case .section(var section) = block {
+                let children = section.blocks
+                section.blocks = []
+                result.append(.section(section))
+                result.append(contentsOf: flattenSections(in: children))
+            } else {
+                result.append(block)
+            }
+        }
+        return result
     }
 
     @discardableResult
@@ -671,16 +1103,16 @@ private extension AdocBlock {
     }
 
     func canTransform(to kind: AsciiDocEditorBlockKind) -> Bool {
-        switch (self, kind) {
-        case (.paragraph, .heading), (.paragraph, .listing), (.paragraph, .verse), (.paragraph, .admonition),
-             (.paragraph, .orderedList), (.paragraph, .unorderedList),
-             (.section, .paragraph), (.section, .listing), (.section, .verse),
-             (.listing, .paragraph), (.listing, .heading), (.listing, .verse),
-             (.verse, .paragraph), (.verse, .heading), (.verse, .listing),
-             (.admonition, .paragraph), (.admonition, .heading), (.admonition, .listing), (.admonition, .verse),
-             (.list, .orderedList), (.list, .unorderedList):
-            return true
-        default:
+        switch kind {
+        case .paragraph, .heading, .listing, .verse, .admonition, .orderedList, .unorderedList:
+            switch self {
+            case .paragraph, .section, .discreteHeading, .listing, .literalBlock, .verse,
+                 .admonition, .quote, .example, .sidebar, .open, .list:
+                return true
+            default:
+                return false
+            }
+        case .descriptionList, .equation, .table:
             return false
         }
     }
@@ -688,44 +1120,92 @@ private extension AdocBlock {
     mutating func transform(to kind: AsciiDocEditorBlockKind) {
         guard canTransform(to: kind) else { return }
 
-        let plainText = text(for: "text") ?? ""
+        if case .list(var list) = self {
+            switch kind {
+            case .orderedList:
+                list.kind = .ordered(marker: ".")
+                list.items = list.items.map { item in
+                    var updated = item
+                    updated.marker = "."
+                    return updated
+                }
+                self = .list(list)
+                return
+            case .unorderedList:
+                list.kind = .unordered(marker: "*")
+                list.items = list.items.map { item in
+                    var updated = item
+                    updated.marker = "*"
+                    return updated
+                }
+                self = .list(list)
+                return
+            default:
+                break
+            }
+        }
+
+        let resolvedText: AdocText
+        if let semantic = semanticText(for: "text") {
+            resolvedText = semantic
+        } else if case .list(let list) = self {
+            if list.items.count == 1 {
+                resolvedText = list.items[0].principal
+            } else {
+                resolvedText = AdocText(plain: list.items.map(\.principal.plain).joined(separator: "\n"))
+            }
+        } else {
+            resolvedText = AdocText(plain: text(for: "text") ?? "")
+        }
 
         switch kind {
         case .paragraph:
-            self = .paragraph(AdocParagraph(text: AdocText(plain: plainText)))
+            self = .paragraph(AdocParagraph(text: resolvedText))
         case .heading:
             let level: Int
             switch self {
             case .section(let section):
                 level = section.level
+            case .discreteHeading(let heading):
+                level = heading.level
             default:
                 level = 1
             }
-            self = .section(AdocSection(level: level, title: AdocText(plain: plainText)))
+            self = .section(AdocSection(level: level, title: resolvedText))
         case .listing:
-            self = .listing(AdocListing(text: AdocText(plain: plainText)))
+            self = .listing(AdocListing(text: resolvedText))
         case .verse:
-            self = .verse(AdocVerse(text: AdocText(plain: plainText)))
+            self = .verse(AdocVerse(text: resolvedText))
         case .admonition:
             self = .admonition(AdocAdmonition(
                 kind: admonitionKind?.rawValue ?? "note",
-                blocks: [.paragraph(AdocParagraph(text: AdocText(plain: plainText)))]
+                blocks: [.paragraph(AdocParagraph(text: resolvedText))]
             ))
         case .orderedList:
-            let items = plainText
-                .split(whereSeparator: \.isNewline)
-                .map { AdocListItem(marker: ".", principal: AdocText(plain: String($0))) }
+            let items: [AdocListItem]
+            if resolvedText.visibleText.contains("\n") {
+                items = resolvedText.plain
+                    .split(whereSeparator: \.isNewline)
+                    .map { AdocListItem(marker: ".", principal: AdocText(plain: String($0))) }
+            } else {
+                items = [AdocListItem(marker: ".", principal: resolvedText)]
+            }
             self = .list(AdocList(
                 kind: .ordered(marker: "."),
-                items: items.isEmpty ? [AdocListItem(marker: ".", principal: AdocText(plain: plainText))] : items
+                items: items.isEmpty ? [AdocListItem(marker: ".", principal: resolvedText)] : items
             ))
         case .unorderedList:
-            let items = plainText
-                .split(whereSeparator: \.isNewline)
-                .map { AdocListItem(marker: "*", principal: AdocText(plain: String($0))) }
+            let items: [AdocListItem]
+            if resolvedText.visibleText.contains("\n") {
+                items = resolvedText.plain
+                    .split(whereSeparator: \.isNewline)
+                    .map { AdocListItem(marker: "*", principal: AdocText(plain: String($0))) }
+            } else {
+                items = [AdocListItem(marker: "*", principal: resolvedText)]
+            }
             self = .list(AdocList(
                 kind: .unordered(marker: "*"),
-                items: items.isEmpty ? [AdocListItem(marker: "*", principal: AdocText(plain: plainText))] : items
+                items: items.isEmpty ? [AdocListItem(marker: "*", principal: resolvedText)] : items
             ))
         case .descriptionList, .equation, .table:
             return

@@ -24,6 +24,10 @@ struct AdocSemanticTextProjection {
     func range(for key: AsciiDocEditorFieldKey) -> NSRange? {
         fields.first(where: { $0.key == key })?.range
     }
+
+    func firstRange(inBlock blockIndex: Int) -> NSRange? {
+        fields.first(where: { $0.key.blockIndex == blockIndex })?.range
+    }
 }
 
 enum AdocSemanticProjectionBuilder {

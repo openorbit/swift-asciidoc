@@ -58,15 +58,48 @@ public final class AsciiDocNSTextEditorView: NSTextView, NSTextViewDelegate {
         rebuildProjection()
     }
 
-    private func rebuildProjection(selection: (AsciiDocEditorFieldKey, Int)? = nil) {
+    private func rebuildProjection(selection: AsciiDocEditorSelection? = nil) {
+        let targetSelection: AsciiDocEditorSelection?
+        if let selection {
+            targetSelection = selection
+        } else {
+            let nativeRange = selectedRange()
+            if let field = projection.field(containing: nativeRange) {
+                targetSelection = AsciiDocEditorSelection(
+                    field: field.key,
+                    range: NSRange(location: nativeRange.location - field.range.location, length: nativeRange.length)
+                )
+            } else {
+                targetSelection = nil
+            }
+        }
+
         projection = AdocSemanticProjectionBuilder.make(document: editorDocument)
         isApplyingProjection = true
         textStorage?.setAttributedString(projection.attributedString)
         isApplyingProjection = false
 
-        if let selection, let fieldRange = projection.range(for: selection.0) {
-            let location = min(fieldRange.location + selection.1, NSMaxRange(fieldRange))
-            setSelectedRange(NSRange(location: location, length: 0))
+        if let targetSelection {
+            applySelection(targetSelection)
+        }
+    }
+
+    public func applySelection(_ selection: AsciiDocEditorSelection) {
+        let fieldRange = projection.range(for: selection.field)
+            ?? projection.firstRange(inBlock: selection.field.blockIndex)
+        guard let fieldRange else { return }
+        let location = min(fieldRange.location + selection.range.location, NSMaxRange(fieldRange))
+        let maxLength = max(0, NSMaxRange(fieldRange) - location)
+        let length = min(selection.range.length, maxLength)
+        let nativeRange = NSRange(location: location, length: length)
+        if selectedRange() != nativeRange {
+            setSelectedRange(nativeRange)
+        }
+        if let field = projection.field(containing: nativeRange) {
+            onSelectionChange?(AsciiDocEditorSelection(
+                field: field.key,
+                range: NSRange(location: nativeRange.location - field.range.location, length: nativeRange.length)
+            ))
         }
     }
 
@@ -75,31 +108,44 @@ public final class AsciiDocNSTextEditorView: NSTextView, NSTextViewDelegate {
         shouldChangeTextIn affectedCharRange: NSRange,
         replacementString: String?
     ) -> Bool {
-        guard !isApplyingProjection,
-              let field = projection.field(containing: affectedCharRange) else {
+        guard !isApplyingProjection else {
             NSSound.beep()
             return false
         }
 
-        let current = (projection.attributedString.string as NSString).substring(with: field.range)
-
-        let localRange = NSRange(
-            location: affectedCharRange.location - field.range.location,
-            length: affectedCharRange.length
-        )
-        guard NSMaxRange(localRange) <= (current as NSString).length else { return false }
-
         let replacement = replacementString ?? ""
-        let previousDocument = editorDocument
-        let updated = (current as NSString).replacingCharacters(in: localRange, with: replacement)
-        if editorDocument.semanticText(for: field.key) != nil {
-            _ = editorDocument.replaceSemanticText(for: field.key, in: localRange, with: replacement)
-        } else {
-            editorDocument.updateText(updated, for: field.key)
+
+        if let field = projection.field(containing: affectedCharRange) {
+            let localRange = NSRange(
+                location: affectedCharRange.location - field.range.location,
+                length: affectedCharRange.length
+            )
+            let currentLength = field.range.length
+            guard NSMaxRange(localRange) <= currentLength else { return false }
+
+            let previousDocument = editorDocument
+            if let nextSelection = editorDocument.applyEdit(in: field.key, range: localRange, replacement: replacement) {
+                registerUndo(previousDocument)
+                onDocumentChange?(editorDocument)
+                rebuildProjection(selection: nextSelection)
+                return false
+            }
+        } else if replacement.isEmpty,
+                  affectedCharRange.length == 1,
+                  selectedRange().length == 0,
+                  let field = projection.field(containing: selectedRange()),
+                  selectedRange().location == field.range.location,
+                  NSMaxRange(affectedCharRange) == field.range.location {
+            let previousDocument = editorDocument
+            if let nextSelection = editorDocument.deleteBackwardAtStart(of: field.key) {
+                registerUndo(previousDocument)
+                onDocumentChange?(editorDocument)
+                rebuildProjection(selection: nextSelection)
+                return false
+            }
         }
-        registerUndo(previousDocument)
-        onDocumentChange?(editorDocument)
-        rebuildProjection(selection: (field.key, localRange.location + (replacement as NSString).length))
+
+        NSSound.beep()
         return false
     }
 
@@ -173,15 +219,48 @@ public final class AsciiDocUITextEditorView: UITextView, UITextViewDelegate {
         rebuildProjection()
     }
 
-    private func rebuildProjection(selection: (AsciiDocEditorFieldKey, Int)? = nil) {
+    private func rebuildProjection(selection: AsciiDocEditorSelection? = nil) {
+        let targetSelection: AsciiDocEditorSelection?
+        if let selection {
+            targetSelection = selection
+        } else {
+            let nativeRange = selectedRange
+            if let field = projection.field(containing: nativeRange) {
+                targetSelection = AsciiDocEditorSelection(
+                    field: field.key,
+                    range: NSRange(location: nativeRange.location - field.range.location, length: nativeRange.length)
+                )
+            } else {
+                targetSelection = nil
+            }
+        }
+
         projection = AdocSemanticProjectionBuilder.make(document: editorDocument)
         isApplyingProjection = true
         attributedText = projection.attributedString
         isApplyingProjection = false
 
-        if let selection, let fieldRange = projection.range(for: selection.0) {
-            let location = min(fieldRange.location + selection.1, NSMaxRange(fieldRange))
-            selectedRange = NSRange(location: location, length: 0)
+        if let targetSelection {
+            applySelection(targetSelection)
+        }
+    }
+
+    public func applySelection(_ selection: AsciiDocEditorSelection) {
+        let fieldRange = projection.range(for: selection.field)
+            ?? projection.firstRange(inBlock: selection.field.blockIndex)
+        guard let fieldRange else { return }
+        let location = min(fieldRange.location + selection.range.location, NSMaxRange(fieldRange))
+        let maxLength = max(0, NSMaxRange(fieldRange) - location)
+        let length = min(selection.range.length, maxLength)
+        let nativeRange = NSRange(location: location, length: length)
+        if selectedRange != nativeRange {
+            selectedRange = nativeRange
+        }
+        if let field = projection.field(containing: nativeRange) {
+            onSelectionChange?(AsciiDocEditorSelection(
+                field: field.key,
+                range: NSRange(location: nativeRange.location - field.range.location, length: nativeRange.length)
+            ))
         }
     }
 
@@ -190,28 +269,36 @@ public final class AsciiDocUITextEditorView: UITextView, UITextViewDelegate {
         shouldChangeTextIn range: NSRange,
         replacementText text: String
     ) -> Bool {
-        guard !isApplyingProjection,
-              markedTextRange == nil,
-              let field = projection.field(containing: range) else {
+        guard !isApplyingProjection, markedTextRange == nil else {
             return markedTextRange != nil
         }
 
+        if let field = projection.field(containing: range) {
+            let localRange = NSRange(location: range.location - field.range.location, length: range.length)
+            guard NSMaxRange(localRange) <= field.range.length else { return false }
 
-        let current = (projection.attributedString.string as NSString).substring(with: field.range)
-
-        let localRange = NSRange(location: range.location - field.range.location, length: range.length)
-        guard NSMaxRange(localRange) <= (current as NSString).length else { return false }
-
-        let previousDocument = editorDocument
-        let updated = (current as NSString).replacingCharacters(in: localRange, with: text)
-        if editorDocument.semanticText(for: field.key) != nil {
-            _ = editorDocument.replaceSemanticText(for: field.key, in: localRange, with: text)
-        } else {
-            editorDocument.updateText(updated, for: field.key)
+            let previousDocument = editorDocument
+            if let nextSelection = editorDocument.applyEdit(in: field.key, range: localRange, replacement: text) {
+                registerUndo(previousDocument)
+                onDocumentChange?(editorDocument)
+                rebuildProjection(selection: nextSelection)
+                return false
+            }
+        } else if text.isEmpty,
+                  range.length == 1,
+                  selectedRange.length == 0,
+                  let field = projection.field(containing: selectedRange),
+                  selectedRange.location == field.range.location,
+                  NSMaxRange(range) == field.range.location {
+            let previousDocument = editorDocument
+            if let nextSelection = editorDocument.deleteBackwardAtStart(of: field.key) {
+                registerUndo(previousDocument)
+                onDocumentChange?(editorDocument)
+                rebuildProjection(selection: nextSelection)
+                return false
+            }
         }
-        registerUndo(previousDocument)
-        onDocumentChange?(editorDocument)
-        rebuildProjection(selection: (field.key, localRange.location + (text as NSString).length))
+
         return false
     }
 

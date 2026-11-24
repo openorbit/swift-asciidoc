@@ -47,6 +47,31 @@ extension AdocText {
         return true
     }
 
+    func splittingVisibleText(at range: NSRange) -> (before: AdocText, after: AdocText) {
+        let visible = visibleText as NSString
+        let safeLoc = min(max(0, range.location), visible.length)
+        let safeEnd = min(max(safeLoc, NSMaxRange(range)), visible.length)
+
+        var before = self
+        if safeLoc < visible.length {
+            before.replaceVisibleText(in: NSRange(location: safeLoc, length: visible.length - safeLoc), with: "")
+        }
+
+        var after = self
+        if safeEnd > 0 {
+            after.replaceVisibleText(in: NSRange(location: 0, length: safeEnd), with: "")
+        }
+        return (before, after)
+    }
+
+    func appending(_ other: AdocText) -> AdocText {
+        if visibleText.isEmpty { return other }
+        if other.visibleText.isEmpty { return self }
+        var combined = AdocText(inlines: inlines + other.inlines, span: nil)
+        combined.plain = combined.inlines.map(\.asciiDocSource).joined()
+        return combined
+    }
+
     fileprivate static func replacing(
         in nodes: [AdocInline],
         range: NSRange,

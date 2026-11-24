@@ -98,11 +98,9 @@ public struct AsciiDocEditorView: View {
     }
 
     private func setBlockStyle(_ kind: AsciiDocEditorBlockKind, headingLevel: Int?) {
-        guard let index = selectedBlockIndex else { return }
-        if document.blockKind(at: index) != kind {
-            document.transformBlock(at: index, to: kind)
-        }
-        if kind == .heading, let headingLevel { document.setHeadingLevel(headingLevel, at: index) }
+        guard let selection, selectedBlockIndex != nil else { return }
+        let updatedSelection = document.setBlockStyle(kind, headingLevel: headingLevel, at: selection)
+        self.selection = updatedSelection
     }
 }
 
@@ -152,6 +150,9 @@ private struct PlatformSemanticTextView: NSViewRepresentable {
         textView.onSelectionChange = { selection = $0 }
         if textView.editorDocument != document {
             textView.editorDocument = document
+            if let selection {
+                textView.applySelection(selection)
+            }
         }
     }
 }
@@ -180,6 +181,9 @@ private struct PlatformSemanticTextView: UIViewRepresentable {
         textView.onSelectionChange = { selection = $0 }
         if textView.editorDocument != document {
             textView.editorDocument = document
+            if let selection {
+                textView.applySelection(selection)
+            }
         }
     }
 }
